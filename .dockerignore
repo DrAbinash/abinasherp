@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+*.log
+ref-repo
+tool-results
+download
+scripts
+.env.local
+.zscripts
+db
+upload

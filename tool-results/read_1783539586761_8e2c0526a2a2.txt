@@ -1,0 +1,2002 @@
+     1→import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+     2→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+     3→import QRCode from "qrcode";
+     4→import { api } from "@/lib/fetchApi";
+     5→import { FINANCIAL_QUERY_OPTIONS } from "@/lib/queryConfig";
+     6→import { incrementPendingSyncCount } from "@/hooks/useSyncStatus";
+     7→import { readStaffSession, isFeatureEnabled } from "@/lib/staffSession";
+     8→import { genUUID } from "@/lib/utils";
+     9→import { getBillPaperSize } from "@/lib/billPrintLayout";
+    10→import { getAutoBillPaperSize } from "@/lib/billPrintSettings";
+    11→import {
+    12→  buildBillPrintHtml,
+    13→  printViaIframe,
+    14→  type PrintBillData,
+    15→  type PrintClinic,
+    16→} from "@/lib/printBill";
+    17→import {
+    18→  loadBillPrintSettings,
+    19→  type BillPrintSettings,
+    20→} from "@/lib/billPrintSettings";
+    21→import { useLocation } from "wouter";
+    22→import { Button } from "@/components/ui/button";
+    23→import { Input } from "@/components/ui/input";
+    24→import { Label } from "@/components/ui/label";
+    25→import { Badge } from "@/components/ui/badge";
+    26→import {
+    27→  Select,
+    28→  SelectContent,
+    29→  SelectItem,
+    30→  SelectTrigger,
+    31→  SelectValue,
+    32→} from "@/components/ui/select";
+    33→import {
+    34→  Dialog,
+    35→  DialogContent,
+    36→  DialogHeader,
+    37→  DialogTitle,
+    38→} from "@/components/ui/dialog";
+    39→import {
+    40→  Popover,
+    41→  PopoverContent,
+    42→  PopoverTrigger,
+    43→} from "@/components/ui/popover";
+    44→import { useToast } from "@/hooks/use-toast";
+    45→import { RegisterPatientForm, type NewPatientData } from "@/components/RegisterPatientForm";
+    46→import {
+    47→  Search,
+    48→  User,
+    49→  UserPlus,
+    50→  FlaskConical,
+    51→  Receipt,
+    52→  Stethoscope,
+    53→  X,
+    54→  Plus,
+    55→  CheckCircle2,
+    56→  Percent,
+    57→  IndianRupee,
+    58→  CalendarDays,
+    59→  Hash,
+    60→  Package,
+    61→  Zap,
+    62→  Phone,
+    63→  RefreshCcw,
+    64→  Star,
+    65→  Printer,
+    66→  ExternalLink,
+    67→  AlertTriangle,
+    68→  Pencil,
+    69→  Check,
+    70→  ChevronRight,
+    71→  ChevronLeft,
+    72→  ChevronUp,
+    73→  Scan,
+    74→  FileText,
+    75→  Settings2,
+    76→  ClipboardList,
+    77→  ChevronDown,
+    78→  Monitor,
+    79→  CreditCard,
+    80→  Barcode,
+    81→  Save,
+    82→} from "lucide-react";
+    83→
+    84→// ──────────────────────────────────────────────────────
+    85→// Types
+    86→// ──────────────────────────────────────────────────────
+    87→type Patient = {
+    88→  id: number;
+    89→  patientId: string;
+    90→  firstName: string;
+    91→  lastName: string;
+    92→  phone: string;
+    93→  gender: string;
+    94→  dateOfBirth: string;
+    95→  email?: string;
+    96→  bloodGroup?: string;
+    97→  address?: string;
+    98→  ageValue?: number | null;
+    99→  ageUnit?: string | null;
+   100→};
+   101→
+   102→type Doctor = { id: number; name: string; specialization: string; billCount?: number };
+   103→type Test   = { id: number; name: string; code: string; price: number; category: string; isActive?: boolean; testType?: string | null; outsourcedLabId?: number | null };
+   104→// Tests embedded in a package carry their per-package discount overrides.
+   105→type PkgTest = Test & { discountPct?: number; discountAmount?: number };
+   106→type Pkg    = { id: number; packageCode: string; name: string; price: number; discountPct: number; discountAmount?: number; isActive?: boolean; tests: PkgTest[] };
+   107→
+   108→type SelectedTest = { testId: number; name: string; code: string; price: number; category: string; source: "test" | "package" };
+   109→type SelectedPackage = { packageId: number; name: string; testIds: number[] };
+   110→type PaySplit = { mode: string; amount: string };
+   111→type LastBill = {
+   112→  id: number;
+   113→  billNumber: string;
+   114→  patient: Patient;
+   115→  doctorName: string | null;
+   116→  tests: SelectedTest[];
+   117→  subtotal: number;
+   118→  discount: number;
+   119→  total: number;
+   120→  payments: PaySplit[];
+   121→  tokenNo?: number | null;
+   122→  tokenDate?: string | null;
+   123→  // Per-department queue tokens issued by the bill creation flow. Populated
+   124→  // by the /api/bills POST response; rendered on the separate token printer
+   125→  // (see printToken below).
+   126→  testTokens?: Array<{ orderTestId: number; testName: string; department: string; roomNumber: string; floorLabel: string; tokenNo: number }>;
+   127→};
+   128→
+   129→// ──────────────────────────────────────────────────────
+   130→// Constants
+   131→// ──────────────────────────────────────────────────────
+   132→const PAYMENT_MODES  = ["cash", "card", "upi", "cheque", "insurance", "online"];
+   133→const BLOOD_GROUPS   = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+   134→const GENDERS        = ["male", "female", "other"];
+   135→
+   136→const inr = (n: number) =>
+   137→  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+   138→
+   139→const today = () => new Date().toLocaleDateString("en-IN", {
+   140→  weekday: "short", year: "numeric", month: "short", day: "numeric",
+   141→});
+   142→
+   143→// ── Second-monitor auto-placement ──────────────────────────────────────────
+   144→// Opens `url` positioned on the second monitor automatically, with no manual
+   145→// dragging required, using the best method the browser/connection allows:
+   146→//
+   147→//  1. Window Management API (window.getScreenDetails) — exact placement on
+   148→//     whichever screen isn't currently showing this window, with automatic
+   149→//     fullscreen. Only available in a SECURE context (https://) in Chrome/Edge
+   150→//     100+, and only after a one-time browser permission prompt. This ERP
+   151→//     currently runs on plain http:// on the LAN, so this path is unavailable
+   152→//     today — it activates automatically the moment the clinic moves to
+   153→//     HTTPS (e.g. via Tailscale HTTPS or a proper certificate), no code
+   154→//     changes needed then.
+   155→//  2. Practical fallback (works today, over plain HTTP, no permissions):
+   156→//     assumes the second monitor is extended to the right of the primary —
+   157→//     the default Windows/most-common clinic PC setup — and opens the window
+   158→//     at that offset, sized to fill a typical monitor. Not pixel-perfect on
+   159→//     unusual monitor arrangements, but lands correctly for the common case
+   160→//     with zero dragging. A "Fullscreen" button on the display page itself
+   161→//     (one click, no drag) covers the rest.
+   162→async function openOnSecondMonitor(url: string, windowName: string): Promise<void> {
+   163→  const wm = (window as unknown as { getScreenDetails?: () => Promise<{
+   164→    screens: Array<{ availLeft: number; availTop: number; availWidth: number; availHeight: number }>;
+   165→    currentScreen: { availLeft: number; availTop: number };
+   166→  }> }).getScreenDetails;
+   167→
+   168→  if (wm && window.isSecureContext) {
+   169→    try {
+   170→      const details = await wm();
+   171→      const other = details.screens.find(
+   172→        (s) => s.availLeft !== details.currentScreen.availLeft || s.availTop !== details.currentScreen.availTop
+   173→      ) ?? details.screens[0];
+   174→      const win = window.open(
+   175→        url,
+   176→        windowName,
+   177→        `left=${other.availLeft},top=${other.availTop},width=${other.availWidth},height=${other.availHeight}`
+   178→      );
+   179→      if (win) {
+   180→        win.addEventListener("load", () => {
+   181→          try { win.document.documentElement.requestFullscreen?.(); } catch { /* best effort */ }
+   182→        });
+   183→        return;
+   184→      }
+   185→    } catch {
+   186→      // Permission denied or API unavailable this call — fall through to heuristic.
+   187→    }
+   188→  }
+   189→
+   190→  // Fallback: place just past the primary screen's right edge.
+   191→  const left = window.screen.width;
+   192→  window.open(url, windowName, `left=${left},top=0,width=1024,height=900`);
+   193→}
+   194→
+   195→// ──────────────────────────────────────────────────────
+   196→// Helpers
+   197→// ──────────────────────────────────────────────────────
+   198→function useDebounce<T>(value: T, delay = 300) {
+   199→  const [debounced, setDebounced] = useState(value);
+   200→  useEffect(() => {
+   201→    const t = setTimeout(() => setDebounced(value), delay);
+   202→    return () => clearTimeout(t);
+   203→  }, [value, delay]);
+   204→  return debounced;
+   205→}
+   206→
+   207→// ──────────────────────────────────────────────────────
+   208→// Component
+   209→// ──────────────────────────────────────────────────────
+   210→type ClinicLite = { name?: string; tagline?: string; address?: string; phone?: string; logoDataUrl?: string | null; footerNote?: string } | undefined;
+   211→type PrinterCfg = { billPrinter?: string; barcodePrinter?: string; barcodeEnabled?: string; tokenPrinter?: string; tokenEnabled?: string };
+   212→
+   213→function openPrintWindow(html: string) {
+   214→  const w = window.open("", "_blank", "width=420,height=600");
+   215→  if (!w) {
+   216→    alert("Pop-up blocked. Please allow pop-ups for this site to print.");
+   217→    return;
+   218→  }
+   219→  w.document.open();
+   220→  w.document.write(html);
+   221→  w.document.close();
+   222→  // Defer print so resources (images / fonts) load first
+   223→  w.onload = () => {
+   224→    w.focus();
+   225→    w.print();
+   226→    setTimeout(() => w.close(), 400);
+   227→  };
+   228→}
+   229→
+   230→function buildBillVerifyUrl(billNumber: string) {
+   231→  // Points at the public api-server endpoint so the QR works in both dev
+   232→  // (where /api is proxied) and production (single-process unified serve).
+   233→  return `${window.location.origin}/api/verify/bill/${encodeURIComponent(billNumber)}`;
+   234→}
+   235→
+   236→// Lightweight placeholder used as a fallback before the async QR has been
+   237→// generated. The real scannable QR is produced via the `qrcode` library in
+   238→// the BillingDesk component below and stored in state.
+   239→function qrSvgDataUrl(text: string) {
+   240→  const safe = escapeHtml(text);
+   241→  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180"><rect width="180" height="180" fill="#fff"/><rect x="12" y="12" width="156" height="156" rx="8" fill="none" stroke="#111" stroke-width="4"/><text x="90" y="88" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#111">VERIFY</text><text x="90" y="112" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#444">${safe}</text></svg>`;
+   242→  return `data:image/svg+xml;base64,${btoa(svg)}`;
+   243→}
+   244→
+   245→async function getPrinterSettings(): Promise<PrinterCfg> {
+   246→  try {
+   247→    return await api.get<PrinterCfg>("/api/printers/settings");
+   248→  } catch {
+   249→    return {};
+   250→  }
+   251→}
+   252→
+   253→function printerWindowFeatures(printerName?: string) {
+   254→  const name = (printerName || "").trim();
+   255→  return name ? `width=420,height=600,noopener,noreferrer` : "width=420,height=600,noopener,noreferrer";
+   256→}
+   257→
+   258→function escapeHtml(s: string) {
+   259→  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+   260→}
+   261→function calcAge(dateOfBirth: string, ageValue?: number | null, ageUnit?: string | null): string {
+   262→  if (ageValue != null && ageUnit) {
+   263→    if (ageUnit === "years") return ageValue > 0 ? `${ageValue} Yrs` : "";
+   264→    if (ageUnit === "months") return `${ageValue} Mo`;
+   265→    if (ageUnit === "days") return `${ageValue} D`;
+   266→  }
+   267→  if (!dateOfBirth) return "";
+   268→  const dob = new Date(dateOfBirth);
+   269→  if (isNaN(dob.getTime())) return "";
+   270→  const now = new Date();
+   271→  let y = now.getFullYear() - dob.getFullYear();
+   272→  const m = now.getMonth() - dob.getMonth();
+   273→  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) y--;
+   274→  return y > 0 ? `${y} Yrs` : "";
+   275→}
+   276→
+   277→// NOTE: BillingDesk no longer has its own printBill() inline template.
+   278→// Save-and-print now uses the shared buildBillPrintHtml() from
+   279→// src/lib/printBill.ts (same as BillDetail re-print) so QR, copies,
+   280→// A4/A5 auto-size, B&W, cancelled tests, and all layout fixes are
+   281→// consistent across both print surfaces.
+   282→
+   283→function code128SVG(value: string): string {
+   284→  // Lightweight inline barcode renderer (Code 128 B subset, digits + uppercase + symbols).
+   285→  // For production accuracy use a library; this gives a scan-friendly visual barcode.
+   286→  const PATTERNS: string[] = ["11011001100","11001101100","11001100110","10010011000","10010001100","10001001100","10011001000","10011000100","10001100100","11001001000","11001000100","11000100100","10110011100","10011011100","10011001110","10111001100","10011101100","10011100110","11001110010","11001011100","11001001110","11011100100","11001110100","11101101110","11101001100","11100101100","11100100110","11101100100","11100110100","11100110010","11011011000","11011000110","11000110110","10100011000","10001011000","10001000110","10110001000","10001101000","10001100010","11010001000","11000101000","11000100010","10110111000","10110001110","10001101110","10111011000","10111000110","10001110110","11101110110","11010001110","11000101110","11011101000","11011100010","11011101110","11101011000","11101000110","11100010110","11101101000","11101100010","11100011010","11101111010","11001000010","11110001010","10100110000","10100001100","10010110000","10010000110","10000101100","10000100110","10110010000","10110000100","10011010000","10011000010","10000110100","10000110010","11000010010","11001010000","11110111010","11000010100","10001111010","10100111100","10010111100","10010011110","10111100100","10011110100","10011110010","11110100100","11110010100","11110010010","11011011110","11011110110","11110110110","10101111000","10100011110","10001011110","10111101000","10111100010","11110101000","11110100010","10111011110","10111101110","11101011110","11110101110","11010000100","11010010000","11010011100","1100011101011"];
+   287→  // 0..127 chars: ASCII offset 32 → index 0
+   288→  const data: number[] = [];
+   289→  for (const ch of value) data.push(Math.max(0, Math.min(94, ch.charCodeAt(0) - 32)));
+   290→  let checksum = 104; // START B
+   291→  data.forEach((c, i) => { checksum += c * (i + 1); });
+   292→  checksum = checksum % 103;
+   293→  const codes = [104, ...data, checksum, 106]; // START B + data + checksum + STOP
+   294→  let bars = "";
+   295→  let x = 0;
+   296→  const W = 1.6, H = 50;
+   297→  for (const code of codes) {
+   298→    const pat = PATTERNS[code];
+   299→    for (let i = 0; i < pat.length; i++) {
+   300→      if (pat[i] === "1") bars += `<rect x="${x.toFixed(2)}" y="0" width="${W}" height="${H}" fill="#000"/>`;
+   301→      x += W;
+   302→    }
+   303→  }
+   304→  const totalW = x;
+   305→  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalW} ${H}" width="${totalW}" height="${H}">${bars}</svg>`;
+   306→}
+   307→
+   308→async function printBarcode(b: LastBill) {
+   309→  const p = await getPrinterSettings();
+   310→  if (p.barcodeEnabled === "false") return;
+   311→  const value = b.billNumber;
+   312→  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Barcode ${escapeHtml(value)}</title>
+   313→    <style>
+   314→      @page { size: 70mm 30mm; margin: 2mm; }
+   315→      body { font-family: Arial, sans-serif; margin:0; padding:4px; text-align:center; }
+   316→      .wrap { display:flex; flex-direction:column; align-items:center; gap:2px; }
+   317→      .name { font-size:11px; font-weight:600; }
+   318→      .meta { font-size:9px; color:#333; }
+   319→      svg { max-width:100%; height:auto; }
+   320→    </style></head><body>
+   321→    <div class="wrap">
+   322→      <div class="name">${escapeHtml(b.patient.firstName)} ${escapeHtml(b.patient.lastName)}</div>
+   323→      ${code128SVG(value)}
+   324→      <div style="font-family:monospace;font-size:10px;letter-spacing:1px">${escapeHtml(value)}</div>
+   325→      <div class="meta">${escapeHtml(b.patient.patientId)} · ${new Date().toLocaleDateString("en-IN")}</div>
+   326→    </div>
+   327→  </body></html>`;
+   328→  const w = window.open("", "_blank", printerWindowFeatures(p.barcodePrinter));
+   329→  if (!w) return openPrintWindow(html);
+   330→  w.document.open(); w.document.write(html); w.document.close(); w.onload = () => { w.focus(); w.print(); setTimeout(() => w.close(), 400); };
+   331→}
+   332→
+   333→// Render the per-department queue token slip on the configured Token Printer.
+   334→// One combined slip lists every department the patient needs to visit, with
+   335→// the token number and the room/counter for each. Falls back to the legacy
+   336→// single-token layout when only `tokenNo` is present (back-compat for bills
+   337→// generated before the per-test token rollout).
+   338→async function printToken(b: LastBill, clinic: ClinicLite) {
+   339→  const p = await getPrinterSettings();
+   340→  if (p.tokenEnabled === "false") return;
+   341→  // Group testTokens by (department, roomNumber, tokenNo) — we don't need to
+   342→  // print the same dept token twice when a bill has two pathology tests that
+   343→  // share one department-level token... wait, current generator emits one
+   344→  // token PER orderTest. Until the per-department mode lands we de-dupe by
+   345→  // department here so the slip stays compact.
+   346→  const seen = new Set<string>();
+   347→  const dedupedTokens = (b.testTokens ?? []).filter((t) => {
+   348→    const key = `${t.department}::${t.tokenNo}`;
+   349→    if (seen.has(key)) return false;
+   350→    seen.add(key);
+   351→    return true;
+   352→  });
+   353→
+   354→  // Nothing to print
+   355→  if (dedupedTokens.length === 0 && b.tokenNo == null) return;
+   356→
+   357→  const ageStr = calcAge(b.patient.dateOfBirth, b.patient.ageValue, b.patient.ageUnit);
+   358→  const ageGender = [ageStr, b.patient.gender].filter(Boolean).join(" / ").toUpperCase();
+   359→  const headerLines = `
+   360→    <div class="clinic">${escapeHtml(clinic?.name || "Diagnostic Centre")}</div>
+   361→    <div class="patient"><strong>${escapeHtml(b.patient.firstName)} ${escapeHtml(b.patient.lastName)}</strong>${ageGender ? ` &middot; ${escapeHtml(ageGender)}` : ""}</div>
+   362→    <div class="meta">ID: ${escapeHtml(b.patient.patientId)} &middot; Bill: ${escapeHtml(String(b.billNumber).replace(/^BILL-?/i, "").replace(/-/g, ""))}</div>
+   363→    ${b.doctorName ? `<div class="meta">Ref: Dr. ${escapeHtml(b.doctorName)}</div>` : ""}
+   364→    <div class="meta">${new Date().toLocaleString("en-IN")}</div>`;
+   365→
+   366→  let body = "";
+   367→  if (dedupedTokens.length > 0) {
+   368→    // Combined per-department slip
+   369→    const rows = dedupedTokens.map((t) => `
+   370→      <tr>
+   371→        <td class="dept">${escapeHtml(t.department)}</td>
+   372→        <td class="num">#${String(t.tokenNo).padStart(3, "0")}</td>
+   373→        <td class="room">${t.roomNumber ? `Room ${escapeHtml(t.roomNumber)}${t.floorLabel ? `<br><span style="font-size:9px;color:#666;font-weight:400">${escapeHtml(t.floorLabel)}</span>` : ""}` : "—"}</td>
+   374→      </tr>`).join("");
+   375→    body = `
+   376→      <div class="title">QUEUE TOKENS</div>
+   377→      <table class="tokens"><tbody>${rows}</tbody></table>
+   378→      <div class="hint">Please proceed to the indicated room and wait for your number to be called.</div>`;
+   379→  } else if (b.tokenNo != null) {
+   380→    // Legacy single-number fallback
+   381→    body = `
+   382→      <div class="title">QUEUE TOKEN</div>
+   383→      <div class="bignum">${String(b.tokenNo).padStart(3, "0")}</div>
+   384→      <div class="hint">Please wait for your token to be called.</div>`;
+   385→  }
+   386→
+   387→  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Token Slip — ${escapeHtml(b.billNumber)}</title>
+   388→    <style>
+   389→      @page { size: 80mm auto; margin: 4mm; }
+   390→      body { font-family: Arial, sans-serif; margin:0; padding:6px; text-align:center; color:#000; font-size:11px; }
+   391→      .clinic { font-size:13px; font-weight:800; border-bottom:1px dashed #000; padding-bottom:4px; margin-bottom:5px; }
+   392→      .patient { font-size:12px; margin:1px 0; }
+   393→      .meta { font-size:10px; color:#444; margin:1px 0; }
+   394→      .title { margin-top:8px; font-size:10px; letter-spacing:2px; color:#444; }
+   395→      .bignum { font-size:64px; font-weight:900; line-height:1; margin:4px 0; }
+   396→      table.tokens { width:100%; border-collapse:collapse; margin-top:6px; }
+   397→      table.tokens td { padding:4px 2px; border-bottom:1px dashed #ccc; vertical-align:middle; }
+   398→      table.tokens td.dept { text-align:left; font-weight:700; font-size:11px; text-transform:uppercase; }
+   399→      table.tokens td.num  { text-align:center; font-weight:900; font-size:18px; letter-spacing:1px; white-space:nowrap; }
+   400→      table.tokens td.room { text-align:right; font-size:10px; color:#1e40af; font-weight:700; white-space:nowrap; }
+   401→      .hint { margin-top:6px; padding-top:4px; border-top:1px dashed #000; font-size:9px; color:#555; }
+   402→    </style></head><body>
+   403→    ${headerLines}
+   404→    ${body}
+   405→  </body></html>`;
+   406→  const w = window.open("", "_blank", printerWindowFeatures(p.tokenPrinter));
+   407→  if (!w) return openPrintWindow(html);
+   408→  w.document.open(); w.document.write(html); w.document.close(); w.onload = () => { w.focus(); w.print(); setTimeout(() => w.close(), 400); };
+   409→}
+   410→
+   411→// NOTE: The standalone "QR Bill" print path was removed in May 2026. The QR
+   412→// code is now embedded directly in the standard receipt template below
+   413→// (gated by the `qrOnBillEnabled` clinic setting). The `qrSvgDataUrl` and
+   414→// `buildBillVerifyUrl` helpers above are still used inline by that template.
+   415→
+   416→export default function BillingDesk() {
+   417→  const { toast } = useToast();
+   418→  const [, navigate] = useLocation();
+   419→
+   420→  // ── Patient state ──────────────────────────────────
+   421→  const [patientSearch, setPatientSearch] = useState("");
+   422→  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+   423→  const [newPatient, setNewPatient] = useState({
+   424→    firstName: "", lastName: "", phone: "", gender: "male",
+   425→    ageValue: "", ageUnit: "years" as "years" | "months" | "days",
+   426→    email: "", address: "", bloodGroup: "",
+   427→  });
+   428→  const [searchOpen, setSearchOpen] = useState(false);
+   429→  const searchRef  = useRef<HTMLDivElement>(null);
+   430→  const paymentRef = useRef<HTMLDivElement>(null);
+   431→
+   432→  // ── Doctor search state ─────────────────────────────
+   433→  const [doctorId, setDoctorId] = useState<number | null>(null);
+   434→  const [doctorMode, setDoctorMode] = useState<"self" | "doctor">("doctor");
+   435→  const [doctorSearch, setDoctorSearch] = useState("");
+   436→  const [doctorSearchOpen, setDoctorSearchOpen] = useState(false);
+   437→  const doctorRef = useRef<HTMLDivElement>(null);
+   438→  const [notes, setNotes] = useState("");
+   439→
+   440→  // ── New patient form visibility ──────────────────────
+   441→  // ── Layout mode (unified / stepped) ─────────────────
+   442→  const [layoutMode, setLayoutMode] = useState<"unified" | "stepped" | "compact" | "classic" | "modern-pro">(() => {
+   443→    const stored = typeof window !== "undefined" ? localStorage.getItem("billingDeskLayout") : null;
+   444→    return (stored as "unified" | "stepped" | "compact") || "unified";
+   445→  });
+   446→  useEffect(() => {
+   447→    const handler = () => {
+   448→      const stored = typeof window !== "undefined" ? localStorage.getItem("billingDeskLayout") : null;
+   449→      setLayoutMode((stored as "unified" | "stepped" | "compact") || "unified");
+   450→    };
+   451→    window.addEventListener("storage", handler);
+   452→    window.addEventListener("billingDeskLayoutChanged", handler);
+   453→    return () => {
+   454→      window.removeEventListener("storage", handler);
+   455→      window.removeEventListener("billingDeskLayoutChanged", handler);
+   456→    };
+   457→  }, []);
+   458→  const isStepped = layoutMode === "stepped";
+   459→  const isCompact = layoutMode === "compact";
+   460→  const isModernPro = layoutMode === "modern-pro";
+   461→
+   462→  // ── Reactive feature flags ────────────────────────────────────────────────
+   463→  // These were previously plain derived values (isFeatureEnabled() called once
+   464→  // at render). The bug: when Settings wrote to localStorage via setFeatureFlag(),
+   465→  // nothing triggered a re-render — so BillingDesk never picked up the change
+   466→  // until a full page refresh.
+   467→  //
+   468→  // Fix: each flag lives in its own useState, seeded from localStorage on mount.
+   469→  // A single "featureFlagsChanged" event listener (dispatched by setFeatureFlag)
+   470→  // re-reads all flags at once when any setting changes. The "storage" event is
+   471→  // also handled for cross-tab propagation (e.g. if the user has Settings open
+   472→  // in one tab and BillingDesk open in another).
+   473→  const readFlags = () => ({
+   474→    autoAdvance:          isStepped && isFeatureEnabled("billingDeskAutoAdvance"),
+   475→    showQuickTests:       isFeatureEnabled("billingDeskQuickTests") !== false,
+   476→    showPackages:         isFeatureEnabled("billingDeskShowPackages") !== false,
+   477→    stickyBillSummary:    isFeatureEnabled("billingDeskStickyBillSummary") !== false,
+   478→    stickyPayment:        isFeatureEnabled("billingDeskStickyPayment") !== false,
+   479→    denseTestList:        isFeatureEnabled("billingDeskDenseTestList"),
+   480→    largeFont:            isFeatureEnabled("billingDeskLargeFont"),
+   481→    showOptionalFields:   isFeatureEnabled("billingDeskShowOptionalFields"),
+   482→    keyboardNav:          isFeatureEnabled("billingDeskKeyboardNav") !== false,
+   483→    autoFocusNext:        isFeatureEnabled("billingDeskAutoFocus") !== false,
+   484→  });
+   485→
+   486→  const [billingFlags, setBillingFlags] = useState(readFlags);
+   487→
+   488→  useEffect(() => {
+   489→    function syncFlags() { setBillingFlags(readFlags()); }
+   490→    // featureFlagsChanged: fires in the same tab when setFeatureFlag() is called
+   491→    window.addEventListener("featureFlagsChanged", syncFlags);
+   492→    // storage: fires when another tab writes to localStorage
+   493→    window.addEventListener("storage", syncFlags);
+   494→    return () => {
+   495→      window.removeEventListener("featureFlagsChanged", syncFlags);
+   496→      window.removeEventListener("storage", syncFlags);
+   497→    };
+   498→  // eslint-disable-next-line react-hooks/exhaustive-deps
+   499→  }, [isStepped]);
+   500→
+   501→  // Destructure for easy use throughout the component
+   502→  const {
+   503→    autoAdvance,
+   504→    showQuickTestsSetting,
+   505→    showPackagesSetting,
+   506→    stickyBillSummary,
+   507→    stickyPayment: _stickyPayment,
+   508→    denseTestList,
+   509→    largeFont,
+   510→    showOptionalFields,
+   511→    keyboardNav: _keyboardNav,
+   512→    autoFocusNext: _autoFocusNext,
+   513→  } = {
+   514→    ...billingFlags,
+   515→    showQuickTestsSetting: billingFlags.showQuickTests,
+   516→    showPackagesSetting:   billingFlags.showPackages,
+   517→  };
+   518→  const [currentStep, setCurrentStep] = useState(1);
+   519→  const [stepCompleted, setStepCompleted] = useState<Set<number>>(new Set());
+   520→  const stepContentRef = useRef<HTMLDivElement>(null);
+   521→
+   522→  const advanceStep = useCallback(() => {
+   523→    if (isStepped && autoAdvance && currentStep < 4) {
+   524→      window.setTimeout(() => {
+   525→        setStepCompleted((prev) => new Set([...prev, currentStep]));
+   526→        setCurrentStep((prev) => prev + 1);
+   527→        window.setTimeout(() => stepContentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+   528→      }, 300);
+   529→    }
+   530→  }, [isStepped, autoAdvance, currentStep]);
+   531→
+   532→  const goToStep = (step: number) => {
+   533→    if (step <= currentStep || stepCompleted.has(step - 1)) {
+   534→      setCurrentStep(step);
+   535→      window.setTimeout(() => stepContentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+   536→    }
+   537→  };
+   538→
+   539→  const stepperActive = (step: number) => step === currentStep;
+   540→  const stepperDone   = (step: number) => stepCompleted.has(step);
+   541→
+   542→  // ── Test selection ─────────────────────────────────
+   543→  const [testSearch, setTestSearch]   = useState("");
+   544→  const [categoryFilter, setCategoryFilter] = useState("all");
+   545→  const [selectedTests, setSelectedTests] = useState<SelectedTest[]>([]);
+   546→  const [selectedPackages, setSelectedPackages] = useState<SelectedPackage[]>([]);
+   547→  const [packageSearch, setPackageSearch] = useState("");
+   548→  const [pinnedTestIds, setPinnedTestIds] = useState<Set<number>>(() => {
+   549→    try {
+   550→      const stored = localStorage.getItem("billingDesk:pinnedTests");
+   551→      return new Set(stored ? JSON.parse(stored) : []);
+   552→    } catch { return new Set(); }
+   553→  });
+   554→  const [pinnedDoctorIds, setPinnedDoctorIds] = useState<Set<number>>(() => {
+   555→    try {
+   556→      const stored = localStorage.getItem("billingDesk:pinnedDoctors");
+   557→      return new Set(stored ? JSON.parse(stored) : []);
+   558→    } catch { return new Set(); }
+   559→  });
+   560→
+   561→  function togglePin(id: number, e: React.MouseEvent) {
+   562→    e.stopPropagation();
+   563→    setPinnedTestIds((prev) => {
+   564→      const next = new Set(prev);
+   565→      if (next.has(id)) next.delete(id); else next.add(id);
+   566→      localStorage.setItem("billingDesk:pinnedTests", JSON.stringify([...next]));
+   567→      return next;
+   568→    });
+   569→  }
+   570→  function toggleDoctorPin(id: number, e: React.MouseEvent) {
+   571→    e.stopPropagation();
+   572→    setPinnedDoctorIds((prev) => {
+   573→      const next = new Set(prev);
+   574→      if (next.has(id)) next.delete(id); else next.add(id);
+   575→      localStorage.setItem("billingDesk:pinnedDoctors", JSON.stringify([...next]));
+   576→      return next;
+   577→    });
+   578→  }
+   579→
+   580→  // ── Billing ────────────────────────────────────────
+   581→  const [discountType, setDiscountType]   = useState<"amount" | "pct">("amount");
+   582→  const [discountValue, setDiscountValue] = useState<number>(0);
+   583→  const [discountReason, setDiscountReason] = useState<string>("");
+   584→  const [discountNote, setDiscountNote]     = useState<string>("");
+   585→  const [payNow, setPayNow]               = useState(true);
+   586→  const [isVipActive, setIsVipActive]     = useState(false);
+   587→  // Collapse panels once the user moves on to the next step — mirrors the
+   588→  // Register Patient form's auto-collapse-after-selection behavior. Both
+   589→  // default open; user can always re-expand by clicking the header.
+   590→  const [testsCollapsed, setTestsCollapsed]     = useState(false);
+   591→  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+   592→  const [doctorCollapsed, setDoctorCollapsed]   = useState(false);
+   593→  const [paymentSplits, setPaymentSplits] = useState<PaySplit[]>([{ mode: "cash", amount: "" }]);
+   594→  const [lastBill, setLastBill]           = useState<LastBill | null>(null);
+   595→  // Real scannable QR (PNG data URL) generated via the qrcode library
+   596→  // whenever a new bill is saved. Falls back to the placeholder SVG until
+   597→  // the async generation finishes — the print fires ~500ms later so the
+   598→  // real QR is virtually always ready before window.print().
+   599→  const [billQrDataUrl, setBillQrDataUrl] = useState<string>("");
+   600→  useEffect(() => {
+   601→    if (!lastBill) { setBillQrDataUrl(""); return; }
+   602→    let cancelled = false;
+   603→    QRCode.toDataURL(buildBillVerifyUrl(lastBill.billNumber), {
+   604→      errorCorrectionLevel: "M",
+   605→      margin: 1,
+   606→      width: 256,
+   607→      color: { dark: "#000000", light: "#ffffff" },
+   608→    })
+   609→      .then((url) => { if (!cancelled) setBillQrDataUrl(url); })
+   610→      .catch(() => { if (!cancelled) setBillQrDataUrl(""); });
+   611→    return () => { cancelled = true; };
+   612→  }, [lastBill]);
+   613→  const [showBillToast, setShowBillToast] = useState(false);
+   614→  const [suggLoading, setSuggLoading]     = useState(false);
+   615→  const [suggestion, setSuggestion]       = useState<{ discount: number; rule: { name: string } | null } | null>(null);
+   616→
+   617→  // ── Preview bill number ─────────────────────────────
+   618→  const { data: previewBillNo } = useQuery<{ next: string; ledgerId?: number }>({
+   619→    queryKey: ["bill-preview-no", doctorId],
+   620→    queryFn: () => api.get(doctorId ? `/api/bills/preview-number?doctorId=${doctorId}` : "/api/bills/preview-number"),
+   621→    retry: false,
+   622→  });
+   623→  const dummyBillPreview = {
+   624→    billNumber: "2026050001",
+   625→    patientName: "Dummy Patient",
+   626→    tests: [
+   627→      { name: "CBC", price: 350 },
+   628→      { name: "Blood Sugar", price: 180 },
+   629→      { name: "Lipid Profile", price: 620 },
+   630→    ],
+   631→    total: 1150,
+   632→  };
+   633→
+   634→  // ── Data queries ────────────────────────────────────
+   635→  const debouncedSearch = useDebounce(patientSearch, 150);
+   636→
+   637→  // Recent patients — loaded once, refreshed only on mount
+   638→  const { data: recentPatients } = useQuery<{ patients: Patient[] }>({
+   639→    queryKey: ["patients-recent"],
+   640→    queryFn: () => api.get<{ patients: Patient[] }>("/api/patients?limit=8&page=1"),
+   641→    staleTime: 10 * 60_000,  // 10 min
+   642→  });
+   643→
+   644→  // Live search — event-driven, short stale is fine
+   645→  const { data: searchResults } = useQuery<{ patients: Patient[] }>({
+   646→    queryKey: ["patients-search", debouncedSearch],
+   647→    queryFn: () => api.get<{ patients: Patient[] }>(`/api/patients?search=${encodeURIComponent(debouncedSearch)}&limit=10`),
+   648→    enabled: debouncedSearch.length >= 1,
+   649→    staleTime: 30_000,
+   650→  });
+   651→
+   652→  // Which list to show in the dropdown
+   653→  const patientResults = debouncedSearch.length >= 1 ? searchResults : recentPatients;
+   654→
+   655→  // Static data — never auto-refresh during a billing session
+   656→  const { data: allTests = [] } = useQuery<Test[]>({
+   657→    queryKey: ["tests-all-popular"],
+   658→    queryFn: () => api.get<{ tests: Test[] }>("/api/tests?limit=500&sort=popular").then((d) => d.tests ?? []),
+   659→    staleTime: Infinity,
+   660→  });
+   661→
+   662→  const { data: clinic } = useQuery<{
+   663→    name: string; tagline: string; address: string; email: string; phone: string;
+   664→    website: string; gstin: string; logoDataUrl: string | null; footerNote?: string;
+   665→    formFTestIds?: string;
+   666→    formFBillingPrompt?: boolean;
+   667→    formFAddressRequired?: boolean;
+   668→    formFGuardianRequired?: boolean;
+   669→    dicomMwlTestIds?: string;
+   670→    dicomMwlTestDefaults?: string;
+   671→    quickTestIds?: string;
+   672→    quickDoctorIds?: string;
+   673→    billPrintCopies?: number;
+   674→    qrOnBillEnabled?: boolean;
+   675→    billShowCode?: boolean;
+   676→    billShowCategory?: boolean;
+   677→  }>({
+   678→    queryKey: ["clinic-settings"],
+   679→    queryFn: () => api.get("/api/clinic-settings/branding"),
+   680→  });
+   681→
+   682→  // VIP surcharge % — same clinic setting Online Booking uses (Settings →
+   683→  // Online Booking → VIP Priority Booking Premium). Kept as its own query
+   684→  // (not merged into the public /branding endpoint above) since pricing
+   685→  // configuration shouldn't be exposed on an unauthenticated route.
+   686→  const { data: vipSettings } = useQuery<{ vipPercentage?: string }>({
+   687→    queryKey: ["clinic-settings-vip"],
+   688→    queryFn: () => api.get("/api/clinic-settings"),
+   689→    staleTime: 5 * 60_000,
+   690→  });
+   691→  const vipPercentage = vipSettings?.vipPercentage ? Number(vipSettings.vipPercentage) : 50;
+   692→
+   693→  // ── Form F ─────────────────────────────────────────
+   694→  const formFTestIdSet: Set<number> = (() => {
+   695→    try { return new Set(JSON.parse(clinic?.formFTestIds ?? "[]") as number[]); }
+   696→    catch { return new Set(); }
+   697→  })();
+   698→  const needsFormF = selectedTests.some((t) => formFTestIdSet.has(t.testId));
+   699→  const [husbandName, setHusbandName] = useState("");
+   700→  const [patientAddress, setPatientAddress] = useState("");
+   701→
+   702→  // ── Form F billing popup (Feature 1) ──
+   703→  const [formFPopupOpen, setFormFPopupOpen] = useState(false);
+   704→  const [formFPopupBillNumber, setFormFPopupBillNumber] = useState("");
+   705→  const [formFPopupHusband, setFormFPopupHusband] = useState("");
+   706→  const [formFPopupAddress, setFormFPopupAddress] = useState("");
+   707→  const formFPopupPendingPrintRef = useRef(false);
+   708→
+   709→  // ── Print preview dialog ──
+   710→  const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+   711→  const [printPreviewHtml, setPrintPreviewHtml] = useState("");
+   712→
+   713→  // ── Gateway Payment Dialog ──
+   714→  const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
+   715→  const [gatewayPaymentInfo, setGatewayPaymentInfo] = useState<{
+   716→    txnRef: string;
+   717→    amount: number;
+   718→    redirectUrl: string;
+   719→    tranCtx?: string;
+   720→    expiryTime?: string;
+   721→    billId: number;
+   722→  } | null>(null);
+   723→  const [gatewayPaymentStatus, setGatewayPaymentStatus] = useState<"pending" | "success" | "failed" | "expired">("pending");
+   724→  const [gatewayPaymentError, setGatewayPaymentError] = useState("");
+   725→  const [expiryMinutes, setExpiryMinutes] = useState(30);
+   726→  const [gatewayQrUrl, setGatewayQrUrl] = useState("");
+   727→
+   728→  useEffect(() => {
+   729→    if (!gatewayPaymentInfo) { setGatewayQrUrl(""); return; }
+   730→    let cancelled = false;
+   731→    const qrData = gatewayPaymentInfo.tranCtx || gatewayPaymentInfo.redirectUrl;
+   732→    QRCode.toDataURL(qrData, {
+   733→      errorCorrectionLevel: "M",
+   734→      margin: 1,
+   735→      width: 256,
+   736→      color: { dark: "#000000", light: "#ffffff" },
+   737→    })
+   738→      .then((url) => { if (!cancelled) setGatewayQrUrl(url); })
+   739→      .catch(() => { if (!cancelled) setGatewayQrUrl(""); });
+   740→    return () => { cancelled = true; };
+   741→  }, [gatewayPaymentInfo]);
+   742→
+   743→  useEffect(() => {
+   744→    if (!gatewayModalOpen || !gatewayPaymentInfo || gatewayPaymentStatus !== "pending") return;
+   745→
+   746→    let timer: number;
+   747→    const poll = async () => {
+   748→      try {
+   749→        const res = await api.get<{ status: "pending" | "success" | "failed" | "expired", error?: string }>(
+   750→          `/api/bills/gateway-payment-status/${encodeURIComponent(gatewayPaymentInfo.txnRef)}`
+   751→        );
+   752→        if (res.status === "success") {
+   753→          setGatewayPaymentStatus("success");
+   754→          toast({ title: "Payment Successful!", description: "Gateway payment received successfully." });
+   755→          window.setTimeout(async () => {
+   756→            setGatewayModalOpen(false);
+   757→            
+   758→            // Re-fetch bill to print the updated bill with successful gateway payment
+   759→            try {
+   760→              const updatedBill = await api.get<any>(`/api/bills/${gatewayPaymentInfo.billId}`);
+   761→              const paid = updatedBill.payments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+   762→              const billForPrint: PrintBillData = {
+   763→                billNumber: updatedBill.billNumber,
+   764→                subtotal: Number(updatedBill.subtotal),
+   765→                discount: Number(updatedBill.discount),
+   766→                taxAmount: Number(updatedBill.taxAmount),
+   767→                totalAmount: Number(updatedBill.totalAmount),
+   768→                paidAmount: paid,
+   769→                balanceAmount: Math.max(0, Number(updatedBill.totalAmount) - paid),
+   770→                createdAt: updatedBill.createdAt,
+   771→                patient: {
+   772→                  firstName: updatedBill.patient.firstName,
+   773→                  lastName: updatedBill.patient.lastName,
+   774→                  patientId: updatedBill.patient.patientId,
+   775→                  phone: updatedBill.patient.phone ?? null,
+   776→                  gender: updatedBill.patient.gender ?? null,
+   777→                  dateOfBirth: updatedBill.patient.dateOfBirth ?? null,
+   778→                },
+   779→                order: {
+   780→                  doctor: updatedBill.order?.doctor ? { name: updatedBill.order.doctor.name } : null,
+   781→                  tests: updatedBill.order?.tests?.map((t: any) => ({
+   782→                    price: t.price,
+   783→                    status: t.status || "active",
+   784→                    test: t.test ? { name: t.test.name, code: t.test.code ?? "", category: t.test.category } : { name: t.displayName || "Test", code: "", category: "" },
+   785→                  })) || [],
+   786→                },
+   787→                payments: updatedBill.payments.map((p: any) => ({
+   788→                  method: p.method,
+   789→                  amount: Number(p.amount || 0),
+   790→                })),
+   791→                tokenNo: lastBillLocalRef.current?.tokenNo ?? null,
+   792→                testTokens: lastBillLocalRef.current?.testTokens ?? null,
+   793→              };
+   794→
+   795→              const settings = loadBillPrintSettings();
+   796→              const cachedClinic = queryClient.getQueryData<PrintClinic>(["clinic-settings"]) || (clinic as PrintClinic);
+   797→              const cachedPrinter = printerCfgCached ?? queryClient.getQueryData<PrinterCfg>(["printer-settings"]);
+   798→              const isBW = (cachedPrinter as { billPrinterType?: string } | undefined)?.billPrinterType === "bw";
+   799→              
+   800→              QRCode.toDataURL(buildBillVerifyUrl(updatedBill.billNumber), {
+   801→                errorCorrectionLevel: "M",
+   802→                margin: 1,
+   803→                width: 256,
+   804→                color: { dark: "#000000", light: "#ffffff" },
+   805→              })
+   806→                .catch(() => "")
+   807→                .then((qrUrl) => {
+   808→                  const paperSize = (getAutoBillPaperSize(updatedBill.order?.tests?.length || 1, undefined, (settings as any).autoA4Threshold ?? 5) === "A4" ? "A4" : "A5") as "A4" | "A5";
+   809→                  const html = buildBillPrintHtml({
+   810→                    bill: billForPrint,
+   811→                    clinic: cachedClinic,
+   812→                    paperSize,
+   813→                    isBW,
+   814→                    qrDataUrl: qrUrl as string,
+   815→                    format: settings.defaultFormat,
+   816→                    showQr: settings.showQrCode,
+   817→                    showAmountInWords: settings.showAmountInWords,
+   818→                    showSignatureLine: settings.showSignatureLine,
+   819→                    showComputerGenerated: settings.showComputerGenerated,
+   820→                    showReportMessage: settings.showReportMessage,
+   821→                    showServiceFooter: settings.showServiceFooter,
+   822→                    showBrandingFooter: settings.showBrandingFooter,
+   823→                    showBarcode: settings.showBarcode,
+   824→                    showWatermark: settings.showWatermark,
+   825→                    showPatientInstructions: settings.showPatientInstructions,
+   826→                    showSystemInfo: settings.showSystemInfo,
+   827→                  });
+   828→                  if (settings.enablePreview) {
+   829→                    setPrintPreviewHtml(html);
+   830→                    setPrintPreviewOpen(true);
+   831→                  } else if (settings.directPrintAfterSave || settings.autoOpenPrintDialog) {
+   832→                    printViaIframe(html);
+   833→                  }
+   834→                  if ((lastBillLocalRef.current?.testTokens?.length ?? 0) > 0 || lastBillLocalRef.current?.tokenNo != null) {
+   835→                    window.setTimeout(() => {
+   836→                      if (lastBillLocalRef.current) {
+   837→                        void printToken(lastBillLocalRef.current, cachedClinic as ClinicLite).catch(() => {});
+   838→                      }
+   839→                    }, 600);
+   840→                  }
+   841→                });
+   842→            } catch (e) {
+   843→              console.error("Failed to print updated bill:", e);
+   844→            }
+   845→
+   846→            resetAll();
+   847→          }, 2000);
+   848→        } else if (res.status === "failed") {
+   849→          setGatewayPaymentStatus("failed");
+   850→          setGatewayPaymentError(res.error || "Payment failed");
+   851→        } else if (res.status === "expired") {
+   852→          setGatewayPaymentStatus("expired");
+   853→        } else {
+   854→          timer = window.setTimeout(poll, 3000);
+   855→        }
+   856→      } catch (err: any) {
+   857→        timer = window.setTimeout(poll, 5000);
+   858→      }
+   859→    };
+   860→
+   861→    timer = window.setTimeout(poll, 3000);
+   862→    return () => clearTimeout(timer);
+   863→  }, [gatewayModalOpen, gatewayPaymentInfo, gatewayPaymentStatus]);
+   864→
+   865→  const lastBillLocalRef = useRef<LastBill | null>(null);
+   866→
+   867→  // ── DICOM MWL fields (triggered by configured tests) ───────────────
+   868→  const dicomMwlTestIdSet: Set<number> = (() => {
+   869→    try { return new Set(JSON.parse(clinic?.dicomMwlTestIds ?? "[]") as number[]); }
+   870→    catch { return new Set(); }
+   871→  })();
+   872→  const dicomMwlTestDefaults: Record<string, { bodyPart: string; stationAE: string }> = (() => {
+   873→    try { const d = JSON.parse(clinic?.dicomMwlTestDefaults ?? "{}"); return typeof d === "object" && d !== null ? d : {}; }
+   874→    catch { return {}; }
+   875→  })();
+   876→  const needsDicom = dicomMwlTestIdSet.size > 0 && selectedTests.some((t) => dicomMwlTestIdSet.has(t.testId));
+   877→  const [dicomStudyDesc, setDicomStudyDesc] = useState("");
+   878→  const [dicomBodyPart, setDicomBodyPart] = useState("");
+   879→  const [dicomStationAE, setDicomStationAE] = useState("");
+   880→  const [dicomReferringDoc, setDicomReferringDoc] = useState("");
+   881→  const dicomFieldsComplete = dicomStudyDesc.trim() !== "" && dicomBodyPart.trim() !== "" && dicomStationAE.trim() !== "" && dicomReferringDoc.trim() !== "";
+   882→
+   883→  // Auto-fill DICOM fields from per-test defaults and bill data whenever the
+   884→  // basket or selected doctor changes. Only overwrites empty fields so manual
+   885→  // edits are preserved.
+   886→  useEffect(() => {
+   887→    if (!needsDicom) return;
+   888→    const firstDicomTest = selectedTests.find((t) => dicomMwlTestIdSet.has(t.testId));
+   889→    if (!firstDicomTest) return;
+   890→    const def = dicomMwlTestDefaults[String(firstDicomTest.testId)];
+   891→    // Study Description: auto-fill from test name
+   892→    setDicomStudyDesc((prev) => prev.trim() ? prev : firstDicomTest.name);
+   893→    // Body Part: fill from per-test default
+   894→    if (def?.bodyPart) setDicomBodyPart((prev) => prev.trim() ? prev : def.bodyPart);
+   895→    // Station AE: fill from per-test default
+   896→    if (def?.stationAE) setDicomStationAE((prev) => prev.trim() ? prev : def.stationAE);
+   897→    // Referring Doctor: fill from the doctor selected on the bill
+   898→    const selectedDoctor = doctors.find((d) => d.id === doctorId);
+   899→    if (selectedDoctor) setDicomReferringDoc((prev) => prev.trim() ? prev : selectedDoctor.name);
+   900→  // eslint-disable-next-line react-hooks/exhaustive-deps
+   901→  }, [needsDicom, selectedTests.map((t) => t.testId).join(","), doctorId]);
+   902→
+   903→
+   904→  // ── Quick Test Tabs (8 customizable slots) ─────────
+   905→  const quickTestIds: (number | null)[] = useMemo(() => {
+   906→    try {
+   907→      const arr = JSON.parse(clinic?.quickTestIds ?? "[null,null,null,null,null,null,null,null]");
+   908→      const out: (number | null)[] = Array.isArray(arr)
+   909→        ? arr.slice(0, 8).map((v: unknown) => (typeof v === "number" ? v : null))
+   910→        : [];
+   911→      while (out.length < 8) out.push(null);
+   912→      return out;
+   913→    } catch { return [null, null, null, null, null, null, null, null]; }
+   914→  }, [clinic?.quickTestIds]);
+   915→  const [quickPickerSlot, setQuickPickerSlot] = useState<number | null>(null);
+   916→  const [quickPickerSearch, setQuickPickerSearch] = useState("");
+   917→
+   918→  // ── Quick Doctor Slots (8 slots, synced with clinic settings — server is
+   919→  // the source of truth; localStorage is only a fast first-paint cache) ────
+   920→  const [quickDoctorIds, setQuickDoctorIds] = useState<(number | null)[]>(() => {
+   921→    try {
+   922→      const stored = localStorage.getItem("billingDesk:quickDoctors");
+   923→      const arr = stored ? JSON.parse(stored) : [null, null, null, null, null, null, null, null];
+   924→      const out: (number | null)[] = Array.isArray(arr)
+   925→        ? arr.slice(0, 8).map((v: unknown) => (typeof v === "number" ? v : null))
+   926→        : [];
+   927→      while (out.length < 8) out.push(null);
+   928→      return out;
+   929→    } catch { return [null, null, null, null, null, null, null, null]; }
+   930→  });
+   931→  // Sync from the server once clinic settings load — this is the actual
+   932→  // saved configuration (assignQuickDoctor below writes here via PUT
+   933→  // /api/clinic-settings). Without this, a browser whose localStorage was
+   934→  // ever cleared — or a different device — would show empty slots even
+   935→  // though the configuration was successfully saved earlier.
+   936→  useEffect(() => {
+   937→    if (!clinic?.quickDoctorIds) return;
+   938→    try {
+   939→      const arr = JSON.parse(clinic.quickDoctorIds);
+   940→      if (Array.isArray(arr)) {
+   941→        const out = arr.slice(0, 8).map((v: unknown) => (typeof v === "number" ? v : null));
+   942→        while (out.length < 8) out.push(null);
+   943→        setQuickDoctorIds(out);
+   944→        localStorage.setItem("billingDesk:quickDoctors", JSON.stringify(out));
+   945→      }
+   946→    } catch { /* keep current state on parse failure */ }
+   947→  }, [clinic?.quickDoctorIds]);
+   948→  const [quickDoctorPickerSlot, setQuickDoctorPickerSlot] = useState<number | null>(null);
+   949→  const [quickDoctorPickerSearch, setQuickDoctorPickerSearch] = useState("");
+   950→  // (Register New Patient form is now always visible — no toggle state needed)
+   951→
+   952→  const { data: doctors = [] } = useQuery<Doctor[]>({
+   953→    queryKey: ["doctors-list"],
+   954→    queryFn: () => api.get<{ doctors: Doctor[] }>("/api/doctors").then((d) => d.doctors ?? []),
+   955→    staleTime: Infinity,
+   956→  });
+   957→
+   958→  const { data: discountReasons = [] } = useQuery<{ id: number; label: string; isActive: boolean }[]>({
+   959→    queryKey: ["discount-reasons"],
+   960→    queryFn: () => api.get("/api/discount-reasons"),
+   961→  });
+   962→
+   963→  const { data: packages = [] } = useQuery<Pkg[]>({
+   964→    queryKey: ["packages-active"],
+   965→    queryFn: () => api.get<Pkg[]>("/api/packages"),
+   966→    staleTime: Infinity,
+   967→    select: (d) => d.filter((p) => p.isActive !== false),
+   968→  });
+   969→
+   970→  // ── Duplicate-bill detection: reuse the today-collections cache ───────────
+   971→  // toLocaleDateString('en-CA') gives ISO-like format in local timezone
+   972→  const todayIsoB = new Date().toLocaleDateString("en-CA");
+   973→  const { data: todayBillsData } = useQuery<{ bills: RecentBill[] }>({
+   974→    queryKey: ["today-collections-panel", todayIsoB],
+   975→    queryFn: () => api.get<{ bills: RecentBill[] }>(`/api/bills?dateFrom=${todayIsoB}&dateTo=${todayIsoB}&excludeCancelled=true&limit=100&page=1`),
+   976→    staleTime: 20_000,
+   977→    refetchOnWindowFocus: true,
+   978→  });
+   979→  const recentPatientBill = !lastBill && selectedPatient
+   980→    ? (todayBillsData?.bills ?? []).find(
+   981→        (b) =>
+   982→          b.patient?.patientId === selectedPatient.patientId &&
+   983→          b.status !== "cancelled",
+   984→      ) ?? null
+   985→    : null;
+   986→
+   987→  // ── Create mutations ───────────────────────────────
+   988→  const createPatientMut = useMutation({
+   989→    mutationFn: (body: typeof newPatient) => {
+   990→      const ageVal = Number(body.ageValue);
+   991→      const unit = body.ageUnit;
+   992→      let dateOfBirth = "";
+   993→      let ageValue: number | null = null;
+   994→      let ageUnit: string | null = null;
+   995→      if (!isNaN(ageVal) && ageVal >= 0) {
+   996→        ageValue = Math.round(ageVal);
+   997→        ageUnit = unit;
+   998→        if (unit === "years") {
+   999→          dateOfBirth = `${new Date().getFullYear() - Math.round(ageVal)}-01-01`;
+  1000→        } else if (unit === "months") {
+  1001→          const d = new Date();
+  1002→          d.setMonth(d.getMonth() - Math.round(ageVal));
+  1003→          dateOfBirth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  1004→        } else {
+  1005→          const d = new Date();
+  1006→          d.setDate(d.getDate() - Math.round(ageVal));
+  1007→          dateOfBirth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  1008→        }
+  1009→      }
+  1010→      return api.post("/api/patients", {
+  1011→        firstName: body.firstName,
+  1012→        lastName: body.lastName,
+  1013→        phone: body.phone,
+  1014→        gender: body.gender,
+  1015→        email: body.email || null,
+  1016→        address: body.address || null,
+  1017→        bloodGroup: body.bloodGroup || null,
+  1018→        dateOfBirth,
+  1019→        ageValue,
+  1020→        ageUnit,
+  1021→      });
+  1022→    },
+  1023→    onSuccess: (p: Patient) => {
+  1024→      setSelectedPatient(p);
+  1025→      setNewPatient({ firstName: "", lastName: "", phone: "", gender: "male", ageValue: "", ageUnit: "years", email: "", address: "", bloodGroup: "" });
+  1026→      toast({ title: `Patient registered: ${p.patientId}` });
+  1027→    },
+  1028→    onError: (err: Error) => {
+  1029→      const msg = err.message || "";
+  1030→      if (msg.includes("409") || msg.includes("was just created") || msg.includes("duplicate")) {
+  1031→        // Extract patient ID from the 409 response if possible
+  1032→        const match = msg.match(/\(P-\d+\)/);
+  1033→        const pid = match ? match[0] : "";
+  1034→        toast({
+  1035→          title: `Duplicate patient${pid ? ` ${pid}` : ""}`,
+  1036→          description: "A patient with this name and phone already exists. Please search for the existing patient instead of creating a new one.",
+  1037→          variant: "destructive",
+  1038→        });
+  1039→      } else {
+  1040→        toast({ title: "Failed to register patient", description: msg, variant: "destructive" });
+  1041→      }
+  1042→    },
+  1043→  });
+  1044→
+  1045→  // Form F save mutation — used by the Form F dialog popup
+  1046→  const formFSaveMut = useMutation({
+  1047→    mutationFn: (body: { billNumber: string; husbandName: string; address: string }) =>
+  1048→      api.post("/api/form-f/save", body),
+  1049→    onSuccess: () => {
+  1050→      setFormFPopupOpen(false);
+  1051→      toast({ title: "Form F saved" });
+  1052→    },
+  1053→    onError: (err: Error) => {
+  1054→      toast({ title: "Form F save failed", description: err.message, variant: "destructive" });
+  1055→    },
+  1056→  });
+  1057→
+  1058→  // Manual gateway status check — called by the "Check Status" button in the
+  1059→  // gateway payment modal. The polling useEffect runs automatically but a manual
+  1060→  // check lets the staff trigger it immediately.
+  1061→  const checkGatewayStatus = async (billId: number, txnRef: string) => {
+  1062→    try {
+  1063→      const res = await api.get<{ status: "pending" | "success" | "failed" | "expired"; error?: string }>(
+  1064→        `/api/bills/gateway-payment-status/${encodeURIComponent(txnRef)}`
+  1065→      );
+  1066→      if (res.status === "success") {
+  1067→        setGatewayPaymentStatus("success");
+  1068→        toast({ title: "Payment confirmed!" });
+  1069→      } else if (res.status === "failed" || res.status === "expired") {
+  1070→        setGatewayPaymentStatus(res.status);
+  1071→        setGatewayPaymentError(res.error ?? "Payment not completed");
+  1072→      }
+  1073→    } catch (err) {
+  1074→      console.error("[gateway] manual status check failed:", err);
+  1075→    }
+  1076→  };
+  1077→
+  1078→  const queryClient = useQueryClient();
+  1079→  const printAfterSaveRef = useRef(false);
+  1080→  // Pre-load printer settings on mount so the auto-print path after "Save &
+  1081→  // Print" doesn't have to wait on a network round-trip — it just reads from
+  1082→  // the React Query cache. Refreshes silently in the background every 5 min.
+  1083→  const { data: printerCfgCached } = useQuery<PrinterCfg>({
+  1084→    queryKey: ["printer-settings"],
+  1085→    queryFn: getPrinterSettings,
+  1086→    staleTime: 5 * 60_000,
+  1087→  });
+  1088→  const generateMut = useMutation({
+  1089→    mutationFn: async () => {
+  1090→      if (!selectedPatient) throw new Error("No patient selected");
+  1091→      if (selectedTests.length === 0) throw new Error("No tests selected");
+  1092→
+  1093→      // Generate a single UUID for this billing attempt. Both the order and bill
+  1094→      // POST carry this key. If either request times out and the browser retries,
+  1095→      // the server will return the already-created record instead of a duplicate.
+  1096→      // The key is NOT persisted across page reloads — each new billing attempt
+  1097→      // (after resetAll) generates a fresh UUID, which is the correct behaviour.
+  1098→      const clientRef = genUUID();
+  1099→
+  1100→      // 1. Create order (with custom per-test prices to preserve package discounts
+  1101→      //    AND VIP surcharge — same approach self-registration.ts uses for Online
+  1102→      //    Booking: inflate each test's price by the VIP multiplier so the bill
+  1103→      //    total the backend computes naturally includes the surcharge without
+  1104→      //    any backend changes).
+  1105→      const vipMultiplier = isVipActive ? 1 + (vipPercentage / 100) : 1;
+  1106→      const order = await api.post<{ id: number; orderNumber: string }>("/api/orders", {
+  1107→        patientId: selectedPatient.id,
+  1108→        doctorId: doctorId ?? undefined,
+  1109→        notes: notes || undefined,
+  1110→        tests: selectedTests.map((t) => ({ testId: t.testId, price: t.price * vipMultiplier })),
+  1111→        clientRef,
+  1112→      });
+  1113→
+  1114→      // 2. Create bill (inline payments are processed server-side within /billing permission)
+  1115→      const paymentRows = payNow
+  1116→        ? paymentSplits.filter((s) => Number(s.amount) > 0).map((s) => ({ amount: Number(s.amount), method: s.mode }))
+  1117→        : [];
+  1118→      const bill = await api.post<{
+  1119→        id: number;
+  1120→        billNumber: string;
+  1121→        token?: { tokenNo: number; tokenDate: string } | null;
+  1122→        testTokens?: Array<{ orderTestId: number; testName: string; department: string; roomNumber: string; floorLabel: string; tokenNo: number }>;
+  1123→        needsFormFData?: boolean;
+  1124→        needsOnlinePayment?: boolean;
+  1125→        onlineAmount?: number;
+  1126→        _idempotent?: boolean;
+  1127→      }>("/api/bills", {
+  1128→        orderId: order.id,
+  1129→        clientRef,
+  1130→        discount: discountAmt,
+  1131→        discountReason: discountAmt > 0 ? discountReason || null : null,
+  1132→        discountReasonNote: discountAmt > 0 ? discountNote || null : null,
+  1133→        payments: paymentRows,
+  1134→        isVip: isVipActive,
+  1135→        ...(needsDicom && dicomFieldsComplete ? {
+  1136→          dicomFields: {
+  1137→            studyDescription: dicomStudyDesc.trim(),
+  1138→            bodyPart: dicomBodyPart.trim(),
+  1139→            scheduledStationAETitle: dicomStationAE.trim(),
+  1140→            referringDoctor: dicomReferringDoc.trim(),
+  1141→          },
+  1142→        } : {}),
+  1143→      });
+  1144→
+  1145→      return bill;
+  1146→    },
+  1147→    onSuccess: async (bill) => {
+  1148→      if (!selectedPatient) return;
+  1149→      const doctor = doctors.find((d) => d.id === doctorId);
+  1150→      const lastBillLocal: LastBill = {
+  1151→        id: bill.id,
+  1152→        billNumber: bill.billNumber,
+  1153→        patient: selectedPatient,
+  1154→        doctorName: doctor?.name ?? null,
+  1155→        tests: [...selectedTests],
+  1156→        subtotal,
+  1157→        discount: discountAmt,
+  1158→        total,
+  1159→        payments: paymentSplits.filter((p) => Number(p.amount) > 0),
+  1160→        tokenNo: bill.token?.tokenNo ?? null,
+  1161→        tokenDate: bill.token?.tokenDate ?? null,
+  1162→        testTokens: bill.testTokens ?? [],
+  1163→      };
+  1164→      setLastBill(lastBillLocal);
+  1165→      lastBillRef.current = lastBillLocal;
+  1166→      lastBillLocalRef.current = lastBillLocal;
+  1167→      incrementPendingSyncCount(2); // order + bill
+  1168→
+  1169→      if (bill.needsOnlinePayment) {
+  1170→        setGatewayPaymentStatus("pending");
+  1171→        setGatewayPaymentError("");
+  1172→        setGatewayModalOpen(true);
+  1173→        setGatewayPaymentInfo(null);
+  1174→        try {
+  1175→          const initRes = await api.post<{
+  1176→            txnRef: string;
+  1177→            amount: number;
+  1178→            redirectUrl: string;
+  1179→            tranCtx?: string;
+  1180→            expiryTime?: string;
+  1181→          }>(`/api/bills/${bill.id}/initiate-gateway-payment`, {
+  1182→            amount: bill.onlineAmount,
+  1183→            expiryMinutes,
+  1184→          });
+  1185→          setGatewayPaymentInfo({
+  1186→            ...initRes,
+  1187→            billId: bill.id,
+  1188→          });
+  1189→        } catch (err: any) {
+  1190→          setGatewayPaymentStatus("failed");
+  1191→          setGatewayPaymentError(err.message || "Failed to initiate online payment");
+  1192→        }
+  1193→        return;
+  1194→      }
+  1195→
+  1196→      setShowBillToast(true);
+  1197→      window.setTimeout(() => setShowBillToast(false), 5000);
+  1198→      queryClient.invalidateQueries({ queryKey: ["recent-bills-today"] });
+  1199→      queryClient.invalidateQueries({ queryKey: ["bill-preview-no"] });
+  1200→      if (printAfterSaveRef.current) {
+  1201→        printAfterSaveRef.current = false;
+  1202→        const cachedClinic = queryClient.getQueryData<PrintClinic>([
+  1203→          "clinic-settings",
+  1204→        ]);
+  1205→        const cachedPrinter =
+  1206→          printerCfgCached ??
+  1207→          queryClient.getQueryData<PrinterCfg>(["printer-settings"]);
+  1208→        const settings = loadBillPrintSettings();
+  1209→        const runPrint = (skipConfirm: boolean) => {
+  1210→          if (settings.askBeforePrint && !skipConfirm) {
+  1211→            if (!window.confirm("Print receipt now?")) {
+  1212→              return;
+  1213→            }
+  1214→          }
+  1215→          void QRCode.toDataURL(buildBillVerifyUrl(lastBillLocal.billNumber), {
+  1216→            errorCorrectionLevel: "M",
+  1217→            margin: 1,
+  1218→            width: 256,
+  1219→            color: { dark: "#000000", light: "#ffffff" },
+  1220→          })
+  1221→            .catch(() => "")
+  1222→            .then((qrUrl) => {
+  1223→            const clinicForPrint = cachedClinic ?? (clinic as PrintClinic);
+  1224→            const isBW = (cachedPrinter as { billPrinterType?: string } | undefined)?.billPrinterType === "bw";
+  1225→            const paid = lastBillLocal.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  1226→            const billForPrint: PrintBillData = {
+  1227→              billNumber: lastBillLocal.billNumber,
+  1228→              subtotal: lastBillLocal.subtotal,
+  1229→              discount: lastBillLocal.discount,
+  1230→              taxAmount: 0,
+  1231→              totalAmount: lastBillLocal.total,
+  1232→              paidAmount: paid,
+  1233→              balanceAmount: Math.max(0, lastBillLocal.total - paid),
+  1234→              createdAt: new Date().toISOString(),
+  1235→              patient: {
+  1236→                firstName: lastBillLocal.patient.firstName,
+  1237→                lastName: lastBillLocal.patient.lastName,
+  1238→                patientId: lastBillLocal.patient.patientId,
+  1239→                phone: lastBillLocal.patient.phone ?? null,
+  1240→                gender: lastBillLocal.patient.gender ?? null,
+  1241→                dateOfBirth: lastBillLocal.patient.dateOfBirth ?? null,
+  1242→              },
+  1243→              order: {
+  1244→                doctor: lastBillLocal.doctorName ? { name: lastBillLocal.doctorName } : null,
+  1245→                tests: lastBillLocal.tests.map((t) => ({
+  1246→                  price: t.price,
+  1247→                  status: "active",
+  1248→                  test: { name: t.name, code: t.code ?? "", category: t.category },
+  1249→                })),
+  1250→              },
+  1251→              payments: lastBillLocal.payments.map((p) => ({
+  1252→                method: p.mode,
+  1253→                amount: Number(p.amount || 0),
+  1254→              })),
+  1255→              tokenNo: lastBillLocal.tokenNo ?? null,
+  1256→              testTokens: lastBillLocal.testTokens ?? null,
+  1257→            };
+  1258→            const paperSize = (getAutoBillPaperSize(lastBillLocal.tests.length, undefined, (settings as any).autoA4Threshold ?? 5) === "A4" ? "A4" : "A5") as "A4" | "A5";
+  1259→            const html = buildBillPrintHtml({
+  1260→              bill: billForPrint,
+  1261→              clinic: clinicForPrint,
+  1262→              paperSize,
+  1263→              isBW,
+  1264→              qrDataUrl: qrUrl as string,
+  1265→              format: settings.defaultFormat,
+  1266→              showQr: settings.showQrCode,
+  1267→              showAmountInWords: settings.showAmountInWords,
+  1268→              showSignatureLine: settings.showSignatureLine,
+  1269→              showComputerGenerated: settings.showComputerGenerated,
+  1270→              showReportMessage: settings.showReportMessage,
+  1271→              showServiceFooter: settings.showServiceFooter,
+  1272→              showBrandingFooter: settings.showBrandingFooter,
+  1273→              showBarcode: settings.showBarcode,
+  1274→              showWatermark: settings.showWatermark,
+  1275→              showPatientInstructions: settings.showPatientInstructions,
+  1276→              showSystemInfo: settings.showSystemInfo,
+  1277→            });
+  1278→            if (settings.enablePreview) {
+  1279→              setPrintPreviewHtml(html);
+  1280→              setPrintPreviewOpen(true);
+  1281→            } else if (settings.directPrintAfterSave || settings.autoOpenPrintDialog) {
+  1282→              printViaIframe(html);
+  1283→            }
+  1284→            if ((lastBillLocal.testTokens?.length ?? 0) > 0 || lastBillLocal.tokenNo != null) {
+  1285→              window.setTimeout(() => {
+  1286→                void printToken(lastBillLocal, clinicForPrint as ClinicLite).catch(() => { /* best-effort */ });
+  1287→              }, 600);
+  1288→            }
+  1289→          });
+  1290→        };
+  1291→        runPrint(false);
+  1292→      }
+  1293→      if (bill.needsFormFData && clinic?.formFBillingPrompt) {
+  1294→        setFormFPopupBillNumber(bill.billNumber);
+  1295→        setFormFPopupHusband("");
+  1296→        setFormFPopupAddress(selectedPatient?.address ?? "");
+  1297→        formFPopupPendingPrintRef.current = printAfterSaveRef.current;
+  1298→        setFormFPopupOpen(true);
+  1299→        return;
+  1300→      }
+  1301→
+  1302→      window.setTimeout(() => {
+  1303→        resetAll();
+  1304→      }, 3000);
+  1305→    },
+  1306→    onError: (err: Error) => {
+  1307→      printAfterSaveRef.current = false;
+  1308→      toast({ title: err.message || "Failed to generate bill", variant: "destructive" });
+  1309→    },
+  1310→    onSettled: () => {
+  1311→      // Release the synchronous guard so the desk is ready for a new bill.
+  1312→      generatingRef.current = false;
+  1313→    },
+  1314→  });
+  1315→
+  1316→  // ── Derived values ──────────────────────────────────
+  1317→  const categories  = ["all", ...Array.from(new Set(allTests.map((t) => t.category))).sort()];
+  1318→
+  1319→  const selectedTestIds = new Set(selectedTests.map((s) => s.testId));
+  1320→
+  1321→  const filteredTests = allTests
+  1322→    .filter((t) => {
+  1323→      if (selectedTestIds.has(t.id)) return false;
+  1324→      const q = testSearch.trim().toLowerCase();
+  1325→      const matchSearch = !q || String(t.id) === q || String(t.id).includes(q) || t.name.toLowerCase().includes(q) || (t.code ?? "").toLowerCase().includes(q);
+  1326→      const matchCat    = categoryFilter === "all" || t.category === categoryFilter;
+  1327→      return matchSearch && matchCat && t.isActive !== false;
+  1328→    })
+  1329→    .sort((a, b) => {
+  1330→      const ap = pinnedTestIds.has(a.id) ? 0 : 1;
+  1331→      const bp = pinnedTestIds.has(b.id) ? 0 : 1;
+  1332→      return ap - bp; // pinned first; popularity order (from API) preserved within each group
+  1333→    });
+  1334→
+  1335→  const filteredPackages = packages.filter((pkg) => {
+  1336→    const q = packageSearch.trim().toLowerCase();
+  1337→    if (!q) return true;
+  1338→    return (
+  1339→      pkg.name.toLowerCase().includes(q) ||
+  1340→      pkg.packageCode.toLowerCase().includes(q) ||
+  1341→      pkg.tests.some((t) => t.name.toLowerCase().includes(q) || t.code.toLowerCase().includes(q))
+  1342→    );
+  1343→  });
+  1344→
+  1345→  const subtotal    = selectedTests.reduce((s, t) => s + t.price, 0);
+  1346→  const discountAmt = discountType === "amount"
+  1347→    ? Math.min(discountValue, subtotal)
+  1348→    : Math.min((subtotal * discountValue) / 100, subtotal);
+  1349→  // VIP surcharge — identical formula to self-registration.ts (used by
+  1350→  // Online Booking): subtotal × (vipPercentage / 100). Computed on the raw
+  1351→  // subtotal (not post-discount), same base self-registration.ts uses.
+  1352→  const vipSurchargeAmt = isVipActive ? subtotal * (vipPercentage / 100) : 0;
+  1353→  const total       = Math.max(0, subtotal - discountAmt) + vipSurchargeAmt;
+  1354→  const paidTotal   = payNow ? paymentSplits.reduce((s, p) => s + (Number(p.amount) || 0), 0) : 0;
+  1355→  const balance     = Math.max(0, total - paidTotal);
+  1356→
+  1357→  // ── Test actions ────────────────────────────────────
+  1358→  function addTest(t: Test) {
+  1359→    if (selectedTests.find((s) => s.testId === t.id)) {
+  1360→      toast({ title: "Test already added" });
+  1361→      return;
+  1362→    }
+  1363→    setSelectedTests((prev) => [...prev, { testId: t.id, name: t.name, code: t.code, price: t.price, category: t.category, source: "test" }]);
+  1364→    setTestSearch("");
+  1365→  }
+  1366→
+  1367→  // ── Quick Test slot save / actions ──────────────────
+  1368→  const saveQuickTestsMut = useMutation({
+  1369→    mutationFn: (ids: (number | null)[]) =>
+  1370→      api.put("/api/clinic-settings", { quickTestIds: JSON.stringify(ids) }),
+  1371→    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["clinic-settings"] }),
+  1372→    onError: () => toast({ title: "Failed to save quick test", variant: "destructive" }),
+  1373→  });
+  1374→  function assignQuickSlot(slotIdx: number, testId: number | null) {
+  1375→    // Read latest cached settings to avoid clobbering concurrent updates
+  1376→    const latest = queryClient.getQueryData<{ quickTestIds?: string }>(["clinic-settings"]);
+  1377→    let current: (number | null)[];
+  1378→    try {
+  1379→      const arr = JSON.parse(latest?.quickTestIds ?? "[null,null,null,null,null,null,null,null]");
+  1380→      current = Array.isArray(arr)
+  1381→        ? arr.slice(0, 8).map((v: unknown) => (typeof v === "number" ? v : null))
+  1382→        : [null, null, null, null, null, null, null, null];
+  1383→      while (current.length < 8) current.push(null);
+  1384→    } catch {
+  1385→      current = [null, null, null, null, null, null, null, null];
+  1386→    }
+  1387→    const next = [...current];
+  1388→    next[slotIdx] = testId;
+  1389→    saveQuickTestsMut.mutate(next);
+  1390→  }
+  1391→  function handleQuickTabClick(slotIdx: number) {
+  1392→    const id = quickTestIds[slotIdx];
+  1393→    if (id == null) {
+  1394→      setQuickPickerSlot(slotIdx);
+  1395→      return;
+  1396→    }
+  1397→    const t = allTests.find((x) => x.id === id);
+  1398→    if (t) addTest(t);
+  1399→    else {
+  1400→      toast({ title: "Saved test no longer exists — please reassign" });
+  1401→      setQuickPickerSlot(slotIdx);
+  1402→    }
+  1403→  }
+  1404→
+  1405→  // ── Quick Doctor slot save (server-synced, mirrors assignQuickSlot above) ──
+  1406→  const saveQuickDoctorsMut = useMutation({
+  1407→    mutationFn: (ids: (number | null)[]) =>
+  1408→      api.put("/api/clinic-settings", { quickDoctorIds: JSON.stringify(ids) }),
+  1409→    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["clinic-settings"] }),
+  1410→    onError: () => toast({ title: "Failed to save quick doctor", variant: "destructive" }),
+  1411→  });
+  1412→  function assignQuickDoctorSlot(slotIdx: number, doctorId: number | null) {
+  1413→    // BUG FIX: previously rebuilt `current` from queryClient.getQueryData
+  1414→    // (the last server-confirmed snapshot). Picking two slots quickly — before
+  1415→    // the first slot's PUT + cache-invalidation round-trip finished — meant
+  1416→    // the second call rebuilt from a snapshot that didn't have the first
+  1417→    // slot's selection yet, so the PUT for slot 2 silently overwrote slot 1
+  1418→    // on the server. Fixing by basing `next` on the current in-memory
+  1419→    // quickDoctorIds state instead, which already reflects every optimistic
+  1420→    // update made so far in this session, avoiding the stale-read race.
+  1421→    setQuickDoctorIds((current) => {
+  1422→      const next = [...current];
+  1423→      while (next.length < 8) next.push(null);
+  1424→      next[slotIdx] = doctorId;
+  1425→      localStorage.setItem("billingDesk:quickDoctors", JSON.stringify(next));
+  1426→      saveQuickDoctorsMut.mutate(next);
+  1427→      return next;
+  1428→    });
+  1429→  }
+  1430→
+  1431→  function addPackage(pkg: Pkg) {
+  1432→    // Package effective price = MRP - %% - flat ₹.
+  1433→    const afterPct = pkg.price - (pkg.price * (pkg.discountPct ?? 0)) / 100;
+  1434→    const effective = Math.max(0, afterPct - (pkg.discountAmount ?? 0));
+  1435→    const count = pkg.tests.length || 1;
+  1436→
+  1437→    // If any test inside this package carries its own discount override, honour
+  1438→    // that on a per-line basis. Otherwise fall back to the historical even
+  1439→    // split of the package's effective price.
+  1440→    const anyOverride = pkg.tests.some(
+  1441→      (t) => Number(t.discountPct ?? 0) > 0 || Number(t.discountAmount ?? 0) > 0,
+  1442→    );
+  1443→    const computeLinePrice = (t: PkgTest) => {
+  1444→      if (anyOverride) {
+  1445→        const base = Number(t.price);
+  1446→        const after = base - (base * Number(t.discountPct ?? 0)) / 100 - Number(t.discountAmount ?? 0);
+  1447→        return Math.max(0, after);
+  1448→      }
+  1449→      return effective / count;
+  1450→    };
+  1451→
+  1452→    const existingIds = new Set(selectedTests.map((s) => s.testId));
+  1453→    const toAdd: SelectedTest[] = pkg.tests
+  1454→      .filter((t) => !existingIds.has(t.id))
+  1455→      .map((t) => ({ testId: t.id, name: t.name, code: t.code, price: computeLinePrice(t), category: t.category, source: "package" as const }));
+  1456→    if (toAdd.length === 0) {
+  1457→      toast({ title: "All tests in this package already added" });
+  1458→      return;
+  1459→    }
+  1460→    setSelectedTests((prev) => [...prev, ...toAdd]);
+  1461→    setSelectedPackages((prev) => [...prev, { packageId: pkg.id, name: pkg.name, testIds: toAdd.map((t) => t.testId) }]);
+  1462→    toast({ title: `Package "${pkg.name}" added (${toAdd.length} tests)` });
+  1463→  }
+  1464→
+  1465→  function removeTest(testId: number) {
+  1466→    setSelectedTests((prev) => prev.filter((t) => t.testId !== testId));
+  1467→    setSelectedPackages((prev) => prev
+  1468→      .map((pkg) => ({ ...pkg, testIds: pkg.testIds.filter((id) => id !== testId) }))
+  1469→      .filter((pkg) => pkg.testIds.length > 0));
+  1470→  }
+  1471→
+  1472→  function removePackage(packageId: number) {
+  1473→    setSelectedPackages((prev) => {
+  1474→      const pkg = prev.find((p) => p.packageId === packageId);
+  1475→      if (!pkg) return prev;
+  1476→      setSelectedTests((tests) => tests.filter((t) => !pkg.testIds.includes(t.testId)));
+  1477→      return prev.filter((p) => p.packageId !== packageId);
+  1478→    });
+  1479→  }
+  1480→
+  1481→  // ── Discount suggestion ─────────────────────────────
+  1482→  async function fetchSuggestion() {
+  1483→    if (selectedTests.length === 0) return;
+  1484→    setSuggLoading(true);
+  1485→    try {
+  1486→      const result = await api.post<{ discount: number; rule: { name: string } | null }>("/api/discounts/apply", {
+  1487→        tests: selectedTests.map((t) => ({ testId: t.testId, category: t.category, price: t.price })),
+  1488→        patientDob: selectedPatient?.dateOfBirth ?? null,
+  1489→        doctorId: doctorId ?? null,
+  1490→      });
+  1491→      setSuggestion(result);
+  1492→    } catch {
+  1493→      setSuggestion(null);
+  1494→    } finally {
+  1495→      setSuggLoading(false);
+  1496→    }
+  1497→  }
+  1498→
+  1499→  // Auto-fetch suggestion whenever patient or doctor changes (if tests are already selected)
+  1500→  useEffect(() => {
+  1501→    if (selectedTests.length > 0 && (selectedPatient || doctorId)) {
+  1502→      void fetchSuggestion();
+  1503→    }
+  1504→  // eslint-disable-next-line react-hooks/exhaustive-deps
+  1505→  }, [selectedPatient?.id, doctorId]);
+  1506→
+  1507→  // ── Click outside patient search dropdown ──────────
+  1508→  useEffect(() => {
+  1509→    function handler(e: MouseEvent) {
+  1510→      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+  1511→        setSearchOpen(false);
+  1512→      }
+  1513→      if (doctorRef.current && !doctorRef.current.contains(e.target as Node)) {
+  1514→        setDoctorSearchOpen(false);
+  1515→      }
+  1516→    }
+  1517→    document.addEventListener("mousedown", handler);
+  1518→    return () => document.removeEventListener("mousedown", handler);
+  1519→  }, []);
+  1520→
+  1521→  // ── Keyboard shortcuts ──────────────────────────────
+  1522→  // Refs are declared here; .current assignments happen after canGenerate is defined (below).
+  1523→  const canGenerateRef = useRef(false);
+  1524→  const lastBillRef    = useRef<LastBill | null>(null);
+  1525→  // Synchronous in-flight guard — set BEFORE mutate(), cleared in onSettled.
+  1526→  // Unlike generateMut.isPending (updated on next render), this ref is immediate
+  1527→  // so double-clicks and rapid keyboard shortcuts can't slip through the gap.
+  1528→  const generatingRef  = useRef(false);
+  1529→  useEffect(() => {
+  1530→    function kbHandler(e: KeyboardEvent) {
+  1531→      const tag = (e.target as HTMLElement)?.tagName;
+  1532→      const inInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  1533→      // Intercept scanner QR-URL input: if the currently focused text input
+  1534→      // contains a bill-verification QR URL, open it instead of submitting.
+  1535→      if (inInput && e.key === "Enter") {
+  1536→        const el = e.target as HTMLInputElement;
+  1537→        const val = el?.value ?? "";
+  1538→        const m = val.match(/\/api\/verify\/bill\/([A-Za-z0-9\-]+)/);
+  1539→        if (m) {
+  1540→          e.preventDefault();
+  1541→          e.stopPropagation();
+  1542→          el.value = "";
+  1543→          const verifyUrl = `${window.location.origin}/api/verify/bill/${encodeURIComponent(m[1])}`;
+  1544→          window.open(verifyUrl, "_blank", "noopener,noreferrer");
+  1545→          return;
+  1546→        }
+  1547→      }
+  1548→      // Esc — blur focused input, do NOT reset bill
+  1549→      if (e.key === "Escape") {
+  1550→        (document.activeElement as HTMLElement)?.blur();
+  1551→        return;
+  1552→      }
+  1553→      // F2 — jump to patient search (works even inside inputs)
+  1554→      if (e.key === "F2") {
+  1555→        e.preventDefault();
+  1556→        const input = searchRef.current?.querySelector("input");
+  1557→        input?.focus();
+  1558→        return;
+  1559→      }
+  1560→      // F4 — jump to payment amount input
+  1561→      if (e.key === "F4") {
+  1562→        e.preventDefault();
+  1563→        paymentRef.current?.querySelector("input")?.focus();
+  1564→        return;
+  1565→      }
+  1566→      if (inInput) return; // let remaining shortcuts only fire outside inputs
+  1567→      // Ctrl/Cmd + P — Save & Print
+  1568→      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+  1569→        e.preventDefault();
+  1570→        if (canGenerateRef.current && !lastBillRef.current && !generatingRef.current) {
+  1571→          generatingRef.current = true;
+  1572→          printAfterSaveRef.current = true;
+  1573→          generateMut.mutate();
+  1574→        }
+  1575→        return;
+  1576→      }
+  1577→      // Ctrl/Cmd + S — Save (no print)
+  1578→      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+  1579→        e.preventDefault();
+  1580→        if (canGenerateRef.current && !lastBillRef.current && !generatingRef.current) {
+  1581→          generatingRef.current = true;
+  1582→          generateMut.mutate();
+  1583→        }
+  1584→        return;
+  1585→      }
+  1586→    }
+  1587→    document.addEventListener("keydown", kbHandler);
+  1588→    return () => document.removeEventListener("keydown", kbHandler);
+  1589→  // eslint-disable-next-line react-hooks/exhaustive-deps
+  1590→  }, []);
+  1591→
+  1592→  // ── Reset ───────────────────────────────────────────
+  1593→  function resetAll() {
+  1594→    setSelectedPatient(null);
+  1595→    setPatientSearch("");
+  1596→    setNewPatient({ firstName: "", lastName: "", phone: "", gender: "male", ageValue: "", ageUnit: "years", email: "", address: "", bloodGroup: "" });
+  1597→    setDoctorId(null);
+  1598→    setDoctorSearch("");
+  1599→    setNotes("");
+  1600→    setSelectedTests([]);
+  1601→    setDiscountValue(0);
+  1602→    setDiscountReason("");
+  1603→    setDiscountNote("");
+  1604→    setPayNow(true);
+  1605→    setPaymentSplits([{ mode: "cash", amount: "" }]);
+  1606→    setLastBill(null);
+  1607→    setSuggestion(null);
+  1608→    setHusbandName("");
+  1609→    setPatientAddress("");
+  1610→    setIsVipActive(false);
+  1611→    setTestsCollapsed(false);
+  1612→    setSummaryCollapsed(false);
+  1613→  }
+  1614→
+  1615→  const canGenerate = !!selectedPatient && selectedTests.length > 0 && !(discountAmt > 0 && !discountReason);
+  1616→  // Update shortcut refs on every render so the keydown handler stays fresh.
+  1617→  canGenerateRef.current = canGenerate;
+  1618→  lastBillRef.current    = lastBill;
+  1619→
+  1620→  // ──────────────────────────────────────────────────────────────────────────
+  1621→  // RENDER — Premium Medical Blue Design System
+  1622→  // Typography-first. Clean hierarchy. Single-screen workflow.
+  1623→  // All business logic above is UNTOUCHED. Only JSX/CSS is new here.
+  1624→  // ──────────────────────────────────────────────────────────────────────────
+  1625→
+  1626→  const deskClass = [
+  1627→    "h-full flex flex-col overflow-hidden bg-[#f4f6f9] dark:bg-slate-900",
+  1628→    denseTestList  ? "billing-dense"     : "",
+  1629→    largeFont      ? "billing-large-font": "",
+  1630→    isCompact      ? "billing-compact"   : "",
+  1631→    isModernPro    ? "billing-modern-pro": "",
+  1632→  ].filter(Boolean).join(" ");
+  1633→
+  1634→  // Shared section header style — Medical Blue accent strip
+  1635→  const SH = (label: string, icon?: React.ReactNode) => (
+  1636→    <div className="px-3 py-1.5 bg-[#1a3a5c] dark:bg-[#0f2540] flex items-center gap-2 border-l-4 border-[#2563eb]">
+  1637→      {icon && <span className="text-[#7eb8f7]">{icon}</span>}
+  1638→      <span className="text-[11px] font-bold uppercase tracking-wider text-white">{label}</span>
+  1639→    </div>
+  1640→  );
+  1641→
+  1642→  // Collapsible variant — same look, but clickable with a chevron and an
+  1643→  // optional right-aligned summary (e.g. Net Total) shown while collapsed.
+  1644→  const SHCollapsible = (
+  1645→    label: string,
+  1646→    icon: React.ReactNode,
+  1647→    collapsed: boolean,
+  1648→    onToggle: () => void,
+  1649→    rightSlot?: React.ReactNode,
+  1650→  ) => (
+  1651→    <button
+  1652→      type="button"
+  1653→      onClick={onToggle}
+  1654→      className="w-full px-3 py-1.5 bg-[#1a3a5c] dark:bg-[#0f2540] flex items-center gap-2 border-l-4 border-[#2563eb] text-left hover:bg-[#204568] transition-colors"
+  1655→    >
+  1656→      {icon && <span className="text-[#7eb8f7] flex-shrink-0">{icon}</span>}
+  1657→      <span className="text-[11px] font-bold uppercase tracking-wider text-white flex-1">{label}</span>
+  1658→      {collapsed && rightSlot}
+  1659→      <ChevronDown size={13} className={`text-[#7eb8f7] flex-shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+  1660→    </button>
+  1661→  );
+  1662→
+  1663→  const cardCls = "bg-white dark:bg-slate-800 border border-[#dde3ec] dark:border-slate-700 rounded-lg overflow-hidden shadow-sm";
+  1664→  // Same as cardCls but WITHOUT overflow-hidden — needed for any card that contains
+  1665→  // an absolutely-positioned dropdown/popover (e.g. the doctor search results),
+  1666→  // since overflow-hidden on the parent silently clips those dropdowns.
+  1667→  const cardClsNoClip = "bg-white dark:bg-slate-800 border border-[#dde3ec] dark:border-slate-700 rounded-lg shadow-sm";
+  1668→
+  1669→  return (
+  1670→    <div className={deskClass}>
+  1671→
+  1672→      {/* ═══════════════════════════════════════════════════════
+  1673→          TOP BAR — date · title · search · recent · new
+  1674→      ═══════════════════════════════════════════════════════ */}
+  1675→      <div className="flex-shrink-0 bg-[#1a3a5c] dark:bg-[#0f2540] px-3 py-1.5 flex items-center gap-3 shadow-md">
+  1676→        <span className="text-[11px] text-[#7eb8f7] flex-shrink-0 font-mono hidden sm:inline">{today()}</span>
+  1677→        <span className="text-[13px] font-bold text-white flex-shrink-0 tracking-wide">Billing Desk</span>
+  1678→        {previewBillNo?.next && (
+  1679→          <span className="text-[10px] text-[#7eb8f7] flex-shrink-0 hidden md:inline">
+  1680→            Next: <strong className="text-white">{previewBillNo.next}</strong>
+  1681→          </span>
+  1682→        )}
+  1683→        <div className="flex-1 min-w-0" />
+  1684→        <div className="flex items-center gap-1.5">
+  1685→          <div className="w-36 sm:w-52 lg:w-64"><BillSearchBox /></div>
+  1686→          <Popover>
+  1687→            <PopoverTrigger asChild>
+  1688→              <button className="h-7 px-2 rounded text-[11px] font-semibold text-[#7eb8f7] hover:bg-white/10 flex items-center gap-1 transition-colors">
+  1689→                <Receipt size={12} />
+  1690→                <span className="hidden md:inline">Recent</span>
+  1691→              </button>
+  1692→            </PopoverTrigger>
+  1693→            <PopoverContent align="end" className="p-0 w-[420px]">
+  1694→              <RecentBillsPanel />
+  1695→            </PopoverContent>
+  1696→          </Popover>
+  1697→          <button
+  1698→            onClick={resetAll}
+  1699→            className="h-7 px-2 rounded text-[11px] font-semibold text-[#7eb8f7] hover:bg-white/10 flex items-center gap-1 transition-colors"
+  1700→          >
+  1701→            <RefreshCcw size={12} />
+  1702→            <span className="hidden md:inline">New</span>
+  1703→          </button>
+  1704→        </div>
+  1705→      </div>
+  1706→
+  1707→      {/* Duplicate-bill warning banner */}
+  1708→      {showBillToast && lastBill && (
+  1709→        <div className="flex-shrink-0 bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center gap-2">
+  1710→          <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0" />
+  1711→          <span className="text-sm font-semibold text-emerald-800">
+  1712→            Bill <strong>{lastBill.billNumber}</strong> saved successfully — click New to start next bill
+  1713→          </span>
+  1714→        </div>
+  1715→      )}
+  1716→
+  1717→      {/* ═══════════════════════════════════════════════════════
+  1718→          STEPPER (only in stepped wizard mode)
+  1719→      ═══════════════════════════════════════════════════════ */}
+  1720→      {isStepped && (
+  1721→        <div className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-[#dde3ec] px-3 py-2">
+  1722→          <div className="flex items-center gap-2 max-w-3xl mx-auto">
+  1723→            {[
+  1724→              { id: 1, label: "Patient",  icon: User },
+  1725→              { id: 2, label: "Doctor",   icon: Stethoscope },
+  1726→              { id: 3, label: "Tests",    icon: FlaskConical },
+  1727→              { id: 4, label: "Summary",  icon: Receipt },
+  1728→            ].map((s, idx) => (
+  1729→              <div key={s.id} className="flex items-center flex-1">
+  1730→                <button
+  1731→                  type="button"
+  1732→                  onClick={() => goToStep(s.id)}
+  1733→                  className={`flex items-center gap-1.5 flex-1 justify-center px-2 py-1.5 rounded-md border text-[11px] font-bold transition-all ${
+  1734→                    stepperActive(s.id)
+  1735→                      ? "bg-[#2563eb] border-[#2563eb] text-white shadow-sm"
+  1736→                      : stepperDone(s.id)
+  1737→                      ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+  1738→                      : "bg-[#f4f6f9] border-[#dde3ec] text-[#64748b]"
+  1739→                  }`}
+  1740→                >
+  1741→                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+  1742→                    stepperActive(s.id) ? "bg-white/20 text-white"
+  1743→                    : stepperDone(s.id)  ? "bg-emerald-500 text-white"
+  1744→                    : "bg-[#dde3ec] text-[#64748b]"
+  1745→                  }`}>
+  1746→                    {stepperDone(s.id) ? <Check size={9} /> : s.id}
+  1747→                  </div>
+  1748→                  <span className="hidden sm:inline">{s.label}</span>
+  1749→                </button>
+  1750→                {idx < 3 && <div className={`w-4 h-px mx-1 ${stepperDone(s.id) ? "bg-emerald-400" : "bg-[#dde3ec]"}`} />}
+  1751→              </div>
+  1752→            ))}
+  1753→          </div>
+  1754→        </div>
+  1755→      )}
+  1756→
+  1757→      {/* ═══════════════════════════════════════════════════════
+  1758→          MAIN TWO-COLUMN LAYOUT
+  1759→          Left  65%  — Patient · Doctor · Tests
+  1760→          Right 35%  — Selected · Summary · Payment · Print
+  1761→      ═══════════════════════════════════════════════════════ */}
+  1762→      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
+  1763→
+  1764→        {/* ▌LEFT COLUMN ▌─────────────────────────────────── */}
+  1765→        <div className="w-full lg:w-[65%] lg:border-r border-[#dde3ec] flex flex-col min-h-0">
+  1766→          <div ref={stepContentRef} className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2.5">
+  1767→
+  1768→            {/* ── PATIENT ─────────────────────────────────── */}
+  1769→            {(!isStepped || currentStep === 1) && (
+  1770→            <div className={cardCls}>
+  1771→              {SH("Patient", <User size={11} />)}
+  1772→              <div className="p-3 space-y-2">
+  1773→
+  1774→                {/* Selected patient card */}
+  1775→                {selectedPatient ? (
+  1776→                  <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg p-3">
+  1777→                    <div className="flex items-center gap-3">
+  1778→                      <div className="w-9 h-9 rounded-full bg-[#2563eb] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+  1779→                        {selectedPatient.firstName[0]}{selectedPatient.lastName[0]}
+  1780→                      </div>
+  1781→                      <div className="flex-1 min-w-0">
+  1782→                        <div className="font-bold text-[14px] text-[#1e3a5f] leading-tight">
+  1783→                          {selectedPatient.firstName} {selectedPatient.lastName}
+  1784→                        </div>
+  1785→                        <div className="text-[11px] text-[#2563eb] font-mono font-semibold">{selectedPatient.patientId}</div>
+  1786→                      </div>
+  1787→                      <div className="text-right text-[11px] text-[#475569] space-y-0.5">
+  1788→                        <div className="font-semibold capitalize">{selectedPatient.gender}</div>
+  1789→                        {selectedPatient.phone && <div>{selectedPatient.phone}</div>}
+  1790→                        {selectedPatient.bloodGroup && (
+  1791→                          <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">{selectedPatient.bloodGroup}</span>
+  1792→                        )}
+  1793→                      </div>
+  1794→                      <button
+  1795→                        onClick={() => { setSelectedPatient(null); setPatientSearch(""); }}
+  1796→                        className="text-[#94a3b8] hover:text-[#64748b] flex-shrink-0"
+  1797→                        title="Change patient"
+  1798→                      >
+  1799→                        <X size={13} />
+  1800→                      </button>
+  1801→                    </div>
+  1802→                  </div>
+  1803→                ) : (
+  1804→                  /* Search / register new patient */
+  1805→                  <div ref={searchRef}>
+  1806→                    {/* Search input */}
+  1807→                    <div className="relative">
+  1808→                      <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
+  1809→                      <input
+  1810→                        className="w-full h-9 pl-9 pr-3 text-sm border border-[#dde3ec] rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/30 focus:border-[#2563eb]"
+  1811→                        placeholder="Search by name, phone or UHID…"
+  1812→                        value={patientSearch}
+  1813→                        onChange={(e) => setPatientSearch(e.target.value)}
+  1814→                        autoFocus={billingFlags.autoFocusNext}
+  1815→                      />
+  1816→                    </div>
+  1817→
+  1818→                    {/* Search results */}
+  1819→                    {debouncedSearch.length > 0 && (
+  1820→                      <div className="mt-1.5 space-y-1">
+  1821→                        {(debouncedSearch.length >= 2 ? searchResults?.patients : recentPatients?.patients)?.slice(0, 5).map((p) => (
+  1822→                          <button
+  1823→                            key={p.id}
+  1824→                            className="w-full text-left px-3 py-2 rounded-md border border-[#dde3ec] bg-white hover:bg-[#eff6ff] hover:border-[#bfdbfe] transition-colors flex items-center gap-3"
+  1825→                            onClick={() => { setSelectedPatient(p); setPatientSearch(""); }}
+  1826→                          >
+  1827→                            <div className="w-7 h-7 rounded-full bg-[#e0eaff] flex items-center justify-center text-[#2563eb] font-bold text-xs flex-shrink-0">
+  1828→                              {p.firstName[0]}{p.lastName[0]}
+  1829→                            </div>
+  1830→                            <div className="flex-1 min-w-0">
+  1831→                              <div className="text-sm font-semibold text-[#1e3a5f] truncate">{p.firstName} {p.lastName}</div>
+  1832→                              <div className="text-[11px] text-[#64748b]">{p.patientId} · {p.phone}</div>
+  1833→                            </div>
+  1834→                          </button>
+  1835→                        ))}
+  1836→                        {patientSearch.length >= 2 && searchResults?.patients?.length === 0 && (
+  1837→                          <div className="px-3 py-2 text-sm text-[#94a3b8] text-center">No patient found</div>
+  1838→                        )}
+  1839→                      </div>
+  1840→                    )}
+  1841→
+  1842→                    {/* Register New Patient — always visible below search (no toggle) */}
+  1843→                  </div>
+  1844→                )}
+  1845→
+  1846→                {/* New Patient Registration form — always shown, not collapsible */}
+  1847→                {!selectedPatient && (
+  1848→                  <div className="pt-2 border-t border-[#e2e8f0]">
+  1849→                    <div className="flex items-center gap-1.5 mb-1.5 text-[12px] font-semibold text-[#2563eb]">
+  1850→                      <UserPlus size={13} />
+  1851→                      Register New Patient
+  1852→                    </div>
+  1853→                    <RegisterPatientForm
+  1854→                      newPatient={newPatient as NewPatientData}
+  1855→                      onPatientChange={(data) =>
+  1856→                        setNewPatient(data as typeof newPatient)
+  1857→                      }
+  1858→                      onSubmit={() => {
+  1859→                        // Only a name is required — lastName, phone, age are optional
+  1860→                        if (!newPatient.firstName.trim() && !newPatient.lastName.trim()) return;
+  1861→                        createPatientMut.mutate(newPatient);
+  1862→                      }}
+  1863→                      isLoading={createPatientMut.isPending}
+  1864→                    />
+  1865→                  </div>
+  1866→                )}
+  1867→              </div>
+  1868→            </div>
+  1869→            )}
+  1870→
+  1871→            {/* Duplicate bill warning */}
+  1872→            {recentPatientBill && !lastBill && (
+  1873→              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+  1874→                <AlertTriangle size={14} className="text-amber-600 flex-shrink-0" />
+  1875→                <span className="text-amber-800 text-xs">
+  1876→                  Open bill <strong>{recentPatientBill.billNumber}</strong> already exists for this patient.
+  1877→                </span>
+  1878→              </div>
+  1879→            )}
+  1880→
+  1881→            {/* DICOM MWL fields */}
+  1882→            {needsDicom && selectedPatient && (
+  1883→              <div className={cardCls}>
+  1884→                {SH("DICOM Worklist", <Scan size={11} />)}
+  1885→                <div className="p-3 grid grid-cols-2 gap-2">
+  1886→                  {[
+  1887→                    { label: "Study Description", val: dicomStudyDesc, set: setDicomStudyDesc },
+  1888→                    { label: "Body Part",          val: dicomBodyPart,  set: setDicomBodyPart  },
+  1889→                    { label: "Station AE Title",   val: dicomStationAE, set: setDicomStationAE },
+  1890→                    { label: "Referring Doctor",   val: dicomReferringDoc, set: setDicomReferringDoc },
+  1891→                  ].map(({ label, val, set }) => (
+  1892→                    <div key={label}>
+  1893→                      <label className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wide">{label}</label>
+  1894→                      <Input className="mt-0.5 h-8 text-sm" value={val} onChange={(e) => set(e.target.value)} />
+  1895→                    </div>
+  1896→                  ))}
+  1897→                </div>
+  1898→              </div>
+  1899→            )}
+  1900→
+  1901→            {/* Form F fields */}
+  1902→            {needsFormF && !clinic?.formFBillingPrompt && (
+  1903→              <div className={cardCls}>
+  1904→                {SH("Form F (Required)", <FileText size={11} />)}
+  1905→                <div className="p-3 space-y-2">
+  1906→                  {clinic?.formFGuardianRequired !== false && (
+  1907→                    <div>
+  1908→                      <label className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wide">
+  1909→                        Husband / Guardian Name *
+  1910→                      </label>
+  1911→                      <Input className="mt-0.5 h-8 text-sm" value={husbandName} onChange={(e) => setHusbandName(e.target.value)} />
+  1912→                    </div>
+  1913→                  )}
+  1914→                  {clinic?.formFAddressRequired !== false && (
+  1915→                    <div>
+  1916→                      <label className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wide">Address *</label>
+  1917→                      <Input className="mt-0.5 h-8 text-sm" value={patientAddress} onChange={(e) => setPatientAddress(e.target.value)} />
+  1918→                    </div>
+  1919→                  )}
+  1920→                </div>
+  1921→              </div>
+  1922→            )}
+  1923→
+  1924→            {/* ── REFERRING DOCTOR ──────────────────────── */}
+  1925→            {(!isStepped || currentStep === 1 || currentStep === 2) && (
+  1926→            <div className={`${cardClsNoClip} mb-2.5`}>
+  1927→              {SHCollapsible(
+  1928→                "Referring Doctor",
+  1929→                <Stethoscope size={11} />,
+  1930→                doctorCollapsed,
+  1931→                () => setDoctorCollapsed((c) => !c),
+  1932→                <span className="text-[10px] text-[#7eb8f7] font-semibold mr-1 truncate max-w-[160px]">
+  1933→                  {doctorId ? doctors.find((d) => d.id === doctorId)?.name : "Walk-in"}
+  1934→                </span>,
+  1935→              )}
+  1936→              {!doctorCollapsed && (
+  1937→              <div className="p-3 space-y-2">
+  1938→                {/* Quick doctor slots — 8 fixed-size slots, same symmetrical grid
+  1939→                    pattern as Investigations quick slots below. Every box is
+  1940→                    identical width; long doctor names truncate with an
+  1941→                    ellipsis (full name still shown on hover via title).
+  1942→                    Click a filled slot to select that doctor for this bill.
+  1943→                    Click an empty (dashed) slot, or right-click any slot, to
+  1944→                    assign/change which doctor lives there. */}
+  1945→                {showQuickTestsSetting && (
+  1946→                  <div className="grid grid-cols-4 gap-1.5">
+  1947→                    {quickDoctorIds.map((docId, idx) => {
+  1948→                      const doc = docId != null ? doctors.find((d) => d.id === docId) : null;
+  1949→                      const isSelected = !!doc && doctorId === doc.id;
+  1950→                      return (
+  1951→                        <div key={idx} className="relative group">
+  1952→                          <button
+  1953→                            type="button"
+  1954→                            onClick={() => {
+  1955→                              if (doc) {
+  1956→                                setDoctorId(isSelected ? null : doc.id);
+  1957→                                setDoctorCollapsed(!isSelected);
+  1958→                              } else {
+  1959→                                setQuickDoctorPickerSlot(idx);
+  1960→                              }
+  1961→                            }}
+  1962→                            onContextMenu={(e) => { e.preventDefault(); setQuickDoctorPickerSlot(idx); }}
+  1963→                            title={doc ? doc.name : "Click to assign a doctor to this slot"}
+  1964→                            className={`w-full px-2 py-1.5 rounded-md text-[11px] font-semibold border transition-all truncate ${doc ? "pr-6" : ""} ${
+  1965→                              doc
+  1966→                                ? isSelected
+  1967→                                  ? "bg-[#2563eb] text-white border-[#2563eb] shadow-sm"
+  1968→                                  : "bg-white border-[#2563eb]/40 text-[#2563eb] hover:bg-[#eff6ff] hover:border-[#2563eb] shadow-sm"
+  1969→                                : "bg-[#f4f6f9] border-dashed border-[#dde3ec] text-[#94a3b8] hover:border-[#93c5fd] hover:text-[#2563eb]"
+  1970→                            }`}
+  1971→                          >
+  1972→                            {doc ? (
+  1973→                              <>
+  1974→                                {doc.name}
+  1975→                                {pinnedDoctorIds.has(doc.id) && <Star size={8} className="inline ml-1 text-amber-400 fill-amber-400" />}
+  1976→                              </>
+  1977→                            ) : (
+  1978→                              `+ Slot ${idx + 1}`
+  1979→                            )}
+  1980→                          </button>
+  1981→                          {doc && (
+  1982→                            <button
+  1983→                              type="button"
+  1984→                              onClick={(e) => { e.stopPropagation(); setQuickDoctorPickerSlot(idx); }}
+  1985→                              className={`absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 transition-colors ${
+  1986→                                isSelected ? "text-white/70 hover:text-white hover:bg-white/20" : "text-[#93c5fd] hover:text-[#2563eb] hover:bg-[#eff6ff]"
+  1987→                              }`}
+  1988→                              title="Edit this slot — assign a different doctor"
+  1989→                            >
+  1990→                              <Pencil size={10} />
+  1991→                            </button>
+  1992→                          )}
+  1993→                        </div>
+  1994→                      );
+  1995→                    })}
+  1996→                  </div>
+  1997→                )}
+  1998→                {/* Doctor search */}
+  1999→                <div ref={doctorRef} className="relative">
+  2000→                  {doctorId && (
+
+[showing lines 1-2000 of 3149; use offset=2001 with limit to continue reading]

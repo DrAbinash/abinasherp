@@ -1,0 +1,831 @@
+// Care ERP — Billing, Accounting, Banking, Referral Doctors, Commission, Staff, Role-based Users, Super Admin
+// SQLite datasource (perfect for Synology NAS deployment — single file DB)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// CLINIC / TENANT
+// ============================================================
+model Clinic {
+  id              String   @id @default(cuid())
+  name            String
+  address         String?
+  phone           String?
+  email           String?
+  gstin           String?
+  registrationNo  String?
+  currency        String   @default("INR")
+  walkInLedgerId  String?
+  commissionDiscountMode String @default("none") // none | deduct | deduct_rollover
+  vipPercentage   Float    @default(50.0)
+  sessionIdleTimeoutMinutes Int @default(30)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// USERS & ROLES & SUPER ADMIN
+// ============================================================
+model User {
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  username          String?  @unique
+  role              String   @default("receptionist") // super_admin | admin | manager | receptionist | billing | accountant | lab | doctor
+  permissions       String   @default("[]") // JSON array of permission paths
+  pinHash           String   // bcrypt hash
+  photoDataUrl      String?
+  sidebarTheme      String?
+  defaultStartPage  String?
+  mustChangePin     Boolean  @default(false)
+  remoteLoginEnabled Boolean @default(false) // bypass USB gate for super_admin
+  maxConcurrentSessions Int  @default(0)
+  failedLoginAttempts Int    @default(0)
+  lockedUntil       DateTime?
+  isActive          Boolean  @default(true)
+  maxDiscount       Float    @default(0) // percentage cap for non-admin users
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sessions          Session[]
+  superAdminSessions SuperAdminSession[]
+  billsCreated      Bill[]       @relation("BillCreatedBy")
+  paymentsRecorded  Payment[]    @relation("PaymentRecordedBy")
+  expensesApproved  Expense[]    @relation("ExpenseApprovedBy")
+  vouchersCreated   Voucher[]    @relation("VoucherCreatedBy")
+  dayClosures       DayClosure[] @relation("DayClosureBy")
+  userDayClosures   UserDayClosure[]
+  staffSalaryPayments StaffSalaryPayment[] @relation("SalaryPaidBy")
+  doctorPayouts     DoctorPayout[] @relation("PayoutBy")
+}
+
+model Session {
+  id              String   @id @default(cuid())
+  userId          String
+  token           String   @unique
+  ipAddress       String?
+  userAgent       String?
+  lastActivityAt  DateTime @default(now())
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SuperAdminSession {
+  id              String   @id @default(cuid())
+  token           String   @unique
+  userId          String
+  expiresAt       DateTime
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RolePermission {
+  id              String   @id @default(cuid())
+  role            String   // super_admin | admin | manager | receptionist | billing | accountant | lab | doctor
+  module          String   // dashboard | patients | billing | payments | orders | tests | doctors | commission | accounting | inventory | expenses | settings | staff | banking | referrals
+  canView         Boolean  @default(false)
+  canCreate       Boolean  @default(false)
+  canEdit         Boolean  @default(false)
+  canDelete       Boolean  @default(false)
+  canPrint        Boolean  @default(false)
+  canReprint      Boolean  @default(false)
+  canRefund       Boolean  @default(false)
+  canExport       Boolean  @default(false)
+  canApprove      Boolean  @default(false)
+  canFinalize     Boolean  @default(false)
+
+  @@unique([role, module])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  userName        String?
+  action          String
+  module          String
+  entityId        String?
+  details         String?  // JSON string
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+}
+
+// ============================================================
+// PATIENTS & DOCTORS & TESTS
+// ============================================================
+model Patient {
+  id              String   @id @default(cuid())
+  patientId       String   @unique // human-readable e.g. P-0001
+  name            String
+  phone           String?
+  email           String?
+  age             Int?
+  gender          String? // male | female | other
+  address         String?
+  ledgerId        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orders          Order[]
+  bills           Bill[]
+}
+
+model Doctor {
+  id              String   @id @default(cuid())
+  name            String
+  specialization  String
+  phone           String?
+  email           String?
+  hospitalAffiliation String?
+  address         String?
+  area            String?
+  registrationNumber String?
+  defaultCommissionType String @default("percentage") // percentage | fixed
+  defaultCommission Float  @default(0)
+  ledgerId        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orders          Order[]
+  commissionRules CommissionRule[]
+  payouts         DoctorPayout[]
+}
+
+model TestCategory {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  description     String?
+  createdAt       DateTime @default(now())
+
+  tests           Test[]
+}
+
+model Test {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  categoryId      String?
+  price           Float
+  cost            Float    @default(0)
+  unit            String?
+  referenceRange  String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category        TestCategory? @relation(fields: [categoryId], references: [id])
+  orderTests      OrderTest[]
+}
+
+// ============================================================
+// ORDERS & BILLS & PAYMENTS
+// ============================================================
+model Order {
+  id              String   @id @default(cuid())
+  orderNumber     String   @unique
+  patientId       String
+  doctorId        String?
+  ledgerId        String?
+  status          String   @default("pending") // pending | completed | cancelled
+  totalAmount     Float    @default(0)
+  notes           String?
+  isVip           Boolean  @default(false)
+  createdByName   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  doctor          Doctor?  @relation(fields: [doctorId], references: [id])
+  orderTests      OrderTest[]
+  bills           Bill[]
+}
+
+model OrderTest {
+  id              String   @id @default(cuid())
+  orderId         String
+  testId          String
+  price           Float
+  status          String   @default("active") // active | cancelled
+  cancelledByName String?
+  cancellationReason String?
+  createdAt       DateTime @default(now())
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  test            Test     @relation(fields: [testId], references: [id])
+
+  @@index([orderId])
+  @@index([testId])
+}
+
+model Bill {
+  id              String   @id @default(cuid())
+  billNumber      String   @unique
+  orderId         String
+  patientId       String
+  subtotal        Float
+  discount        Float    @default(0)
+  discountReason  String?
+  discountReasonNote String?
+  taxAmount       Float    @default(0)
+  totalAmount     Float    // NEVER mutated by refunds
+  paidAmount      Float    @default(0)
+  balanceAmount   Float    @default(0)
+  refundAmount    Float    @default(0)
+  status          String   @default("pending") // draft | pending | partial | paid | cancelled
+  ledgerId        String?
+  dueDate         String?
+  createdById     String
+  createdByName   String
+  cancelledAt     DateTime?
+  cancelledByName String?
+  cancellationReason String?
+  clientRef       String?  // idempotency key
+  originalTotal   Float?
+  qrScanCount     Int      @default(0)
+  receiptVerificationCount Int @default(0)
+  pdfDownloadCount Int     @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  order           Order    @relation(fields: [orderId], references: [id])
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  createdBy       User     @relation("BillCreatedBy", fields: [createdById], references: [id])
+  payments        Payment[]
+  audits          BillAudit[]
+
+  @@index([orderId])
+  @@index([patientId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  billId          String
+  amount          Float    // NEGATIVE for refunds
+  method          String   // cash | upi | card | cheque | bank | neft | rtgs | online | insurance
+  referenceNumber String?
+  notes           String?
+  recordedById    String
+  recordedByName  String
+  voucherId       String?
+  createdAt       DateTime @default(now())
+
+  bill            Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  recordedBy      User     @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([billId])
+  @@index([method])
+  @@index([createdAt])
+}
+
+model BillAudit {
+  id              String   @id @default(cuid())
+  billId          String
+  changeType      String   // reprint | cancelled | refund | tests_cancelled_cascade | deleted | edited | test_swapped | test-cancelled | extra_payment | referral | subtotal | taxAmount | subtotal_mismatch_warning
+  oldValue        String?
+  newValue        String?
+  performedByName String?
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  bill            Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+}
+
+model DiscountReason {
+  id              String   @id @default(cuid())
+  reason          String   @unique
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+}
+
+// ============================================================
+// ACCOUNTING (Tally-style)
+// ============================================================
+model Account {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  type            String   // cash | bank | income | expense | liability | asset
+  code            String?  @unique
+  bankName        String?
+  accountNumber   String?
+  ifscCode        String?
+  branch          String?
+  isActive        Boolean  @default(true)
+  tallyGroup      String?  // Current Assets | Fixed Assets | Direct Income | Indirect Expenses | Cash-in-Hand | Bank Accounts | Sundry Debtors | Sundry Creditors | Duties & Taxes | Capital Account | etc.
+  openingBalance  Float    @default(0)
+  openingBalanceType String @default("Dr") // Dr | Cr
+  gstApplicable   Boolean  @default(false)
+  gstNumber       String?
+  pan             String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  creditVouchers  Voucher[] @relation("VoucherCreditAccount")
+  debitVouchers   Voucher[] @relation("VoucherDebitAccount")
+}
+
+model Voucher {
+  id              String   @id @default(cuid())
+  voucherNumber   String   @unique
+  type            String   // payment | receipt | contra | journal | bank_transfer | sales | purchase
+  date            String   // YYYY-MM-DD
+  creditAccountId String
+  debitAccountId  String
+  amount          Float
+  particular      String?
+  remark          String?
+  performedBy     String?
+  reference       String?
+  narration       String?
+  billId          String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  creditAccount   Account  @relation("VoucherCreditAccount", fields: [creditAccountId], references: [id])
+  debitAccount    Account  @relation("VoucherDebitAccount", fields: [debitAccountId], references: [id])
+  createdBy       User     @relation("VoucherCreatedBy", fields: [createdById], references: [id])
+  audits          VoucherAudit[]
+
+  @@index([type])
+  @@index([date])
+  @@index([creditAccountId])
+  @@index([debitAccountId])
+}
+
+model VoucherAudit {
+  id              String   @id @default(cuid())
+  voucherId       String
+  changeType      String   // amount | date | particular | reference | narration | accounts | general | remark | performedBy
+  oldValue        String?
+  newValue        String?
+  editedBy        String?
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  voucher         Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@index([voucherId])
+}
+
+model Expense {
+  id              String   @id @default(cuid())
+  expenseId       String   @unique // EXP-YYMM-####
+  category        String   // rent | salaries | utilities | supplies | maintenance | equipment | marketing | travel | miscellaneous
+  description     String
+  amount          Float
+  expenseDate     String   // YYYY-MM-DD
+  paymentMode     String   @default("cash") // cash | bank-transfer | cheque | upi | card
+  paidTo          String?
+  voucherId       String?
+  approvedById    String?
+  approvedByName  String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  approvedBy      User?    @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([category])
+  @@index([expenseDate])
+}
+
+model ExpenseCounter {
+  id              Int      @id @default(1)
+  yearMonth       String   @unique // YYMM
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// BANKING
+// ============================================================
+model BankAccount {
+  id              String   @id @default(cuid())
+  provider        String   @default("mock") // mock | icici | hdfc | axis | sbi | kotak | generic | bharatpe | phonepe | cashfree
+  bankName        String
+  maskedAccountNumber String?
+  ifsc            String?
+  branch          String?
+  environment     String   @default("production") // sandbox | production
+  status          String   @default("active") // active | inactive | suspended
+  credentialKey   String?
+  ledgerAccountId String?
+  providerConfig  String?  // JSON string
+  currentBalance  Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  transactions    BankTransaction[]
+  paymentRequests PaymentRequest[]
+}
+
+model BankTransaction {
+  id              String   @id @default(cuid())
+  bankAccountId   String
+  provider        String?
+  externalTransactionId String?
+  transactionDate DateTime
+  description     String?
+  amount          Float
+  type            String   // credit | debit
+  balanceAfter    Float?
+  utr             String?
+  referenceNumber String?
+  rawPayload      String?  // JSON
+  reconciliationStatus String @default("unreconciled") // unreconciled | matched | manual | ignored
+  voucherId       String?
+  paymentId       String?
+  billId          String?
+  createdAt       DateTime @default(now())
+
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  reconciliation  ReconciliationLog?
+
+  @@index([bankAccountId])
+  @@index([reconciliationStatus])
+  @@index([transactionDate])
+}
+
+model PaymentRequest {
+  id              String   @id @default(cuid())
+  bankAccountId   String
+  amount          Float
+  beneficiaryName String
+  beneficiaryAccount String?
+  beneficiaryIfsc String?
+  purpose         String?
+  status          String   @default("pending") // pending | processing | completed | failed
+  externalRef     String?
+  createdAt       DateTime @default(now())
+
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id])
+}
+
+model ReconciliationLog {
+  id              String   @id @default(cuid())
+  bankTransactionId String  @unique
+  billId          String?
+  paymentId       String?
+  voucherId       String?
+  confidenceScore Int      @default(0) // 0-100
+  matchStrategy   String?  // exact_utr | exact_invoice_ref | exact_amount_time | mobile_amount | patient_id_amount | manual | none
+  status          String   @default("pending") // pending | auto_matched | manual | ignored
+  autoClosed      Boolean  @default(false)
+  autoClosedAmount Float   @default(0)
+  resolvedById    String?
+  resolvedByName  String?
+  resolvedAt      DateTime?
+  matchMetadata   String?  // JSON
+  createdAt       DateTime @default(now())
+
+  bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+}
+
+model WebhookLog {
+  id              String   @id @default(cuid())
+  provider        String
+  eventType       String?
+  payload         String?  // JSON
+  rawBody         String?
+  signatureValid  Boolean  @default(false)
+  processed       Boolean  @default(false)
+  processingError String?
+  createdAt       DateTime @default(now())
+}
+
+model BankAuditLog {
+  id              String   @id @default(cuid())
+  action          String
+  provider        String?
+  bankAccountId   String?
+  externalId      String?
+  amount          Float?
+  status          String   // success | error | warning
+  details         String?  // JSON
+  performedBy     String?
+  createdAt       DateTime @default(now())
+}
+
+model FraudAlert {
+  id              String   @id @default(cuid())
+  alertType       String   // duplicate_utr | invoice_edited_after_payment | bill_deleted_after_collection | refund_without_approval | collection_mismatch | shift_mismatch | backdated_edit | multiple_manual_overrides | suspicious_amount | unusual_timing
+  severity        String   @default("medium") // critical | high | medium | low
+  status          String   @default("open") // open | investigating | resolved | false_positive | escalated
+  billId          String?
+  paymentId       String?
+  bankTransactionId String?
+  userId          String?
+  title           String
+  description     String?
+  affectedAmount  Float?
+  evidence        String?  // JSON
+  resolutionAction String? // approved | rejected | adjusted | escalated
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RefundRequest {
+  id              String   @id @default(cuid())
+  billId          String?
+  paymentId       String?
+  amount          Float
+  reason          String?
+  requestedById   String?
+  requestedByName String?
+  status          String   @default("requested") // requested | approved | rejected | processing | completed
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedByName  String?
+  rejectedAt      DateTime?
+  gatewayRefundId String?
+  gatewayRefundStatus String?
+  completedAt     DateTime?
+  completedBy     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ShiftClosure {
+  id              String   @id @default(cuid())
+  userId          String
+  userName        String
+  shiftLabel      String   // Morning | Afternoon | Evening | Night
+  startedAt       DateTime
+  endedAt         DateTime?
+  expectedCash    Float    @default(0)
+  expectedUpi     Float    @default(0)
+  expectedCard    Float    @default(0)
+  expectedCheque  Float    @default(0)
+  expectedOther   Float    @default(0)
+  actualCash      Float    @default(0)
+  actualUpi       Float    @default(0)
+  actualCard      Float    @default(0)
+  actualCheque    Float    @default(0)
+  actualOther     Float    @default(0)
+  variance        Float    @default(0)
+  denominations   String?  // JSON
+  denominationTotal Float  @default(0)
+  bankDepositAmount Float  @default(0)
+  bankDepositRef  String?
+  supervisorId    String?
+  supervisorName  String?
+  approvedAt      DateTime?
+  status          String   @default("open") // open | closing | closed | approved | reopened
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// COMMISSION
+// ============================================================
+model CommissionRule {
+  id              String   @id @default(cuid())
+  doctorId        String
+  name            String
+  type            String   @default("percentage") // percentage | fixed
+  value           Float
+  scope           String   @default("all") // all | category | test
+  categories      String?  // JSON array of category strings
+  testIds         String?  // JSON array of test IDs
+  isExclusive     Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  doctor          Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+}
+
+model DoctorPayout {
+  id              String   @id @default(cuid())
+  doctorId        String
+  amount          Float
+  paymentDate     String   // YYYY-MM-DD
+  paymentMethod   String   @default("cash") // cash | bank | upi | cheque | card | other
+  reference       String?
+  periodFrom      String?
+  periodTo        String?
+  notes           String?
+  voucherId       String?
+  performedById   String
+  performedByName String?
+  createdAt       DateTime @default(now())
+
+  doctor          Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  performedBy     User     @relation("PayoutBy", fields: [performedById], references: [id])
+
+  @@index([doctorId])
+  @@index([paymentDate])
+}
+
+// ============================================================
+// DAY CLOSE
+// ============================================================
+model DayClosure {
+  id              String   @id @default(cuid())
+  closureDate     String   // YYYY-MM-DD (IST label)
+  closedAt        DateTime
+  closedById      String
+  closedByName    String?
+  coveredFromTs   DateTime
+  coveredToTs     DateTime
+  expectedCash    Float    @default(0)
+  expectedUpi     Float    @default(0)
+  expectedCard    Float    @default(0)
+  expectedCheque  Float    @default(0)
+  expectedOther   Float    @default(0)
+  actualCash      Float    @default(0)
+  actualUpi       Float    @default(0)
+  actualCard      Float    @default(0)
+  actualCheque    Float    @default(0)
+  actualOther     Float    @default(0)
+  variance        Float    @default(0)
+  varianceNote    String?
+  billsCount      Int      @default(0)
+  paymentsCount   Int      @default(0)
+  totalExpected   Float    @default(0)
+  totalActual     Float    @default(0)
+  totalBilled     Float    @default(0)
+  totalRefunds    Float    @default(0)
+  totalExpenses   Float    @default(0)
+  totalDue        Float    @default(0)
+  staffBreakdown  String?  // JSON
+  testSummary     String?  // JSON
+  expenseDetails  String?  // JSON
+  refundDetails   String?  // JSON
+  status          String   @default("closed") // closed | reopened
+  reopenedAt      DateTime?
+  reopenedById    String?
+  reopenedByName  String?
+  reopenReason    String?
+  createdAt       DateTime @default(now())
+
+  closedBy        User     @relation("DayClosureBy", fields: [closedById], references: [id])
+
+  @@index([closureDate])
+  @@index([status])
+}
+
+model UserDayClosure {
+  id              String   @id @default(cuid())
+  userId          String
+  userName        String
+  closureDate     String   // YYYY-MM-DD
+  closedAt        DateTime
+  coveredFromTs   DateTime
+  coveredToTs     DateTime
+  expectedCash    Float    @default(0)
+  expectedUpi     Float    @default(0)
+  expectedCard    Float    @default(0)
+  expectedCheque  Float    @default(0)
+  expectedOther   Float    @default(0)
+  actualCash      Float    @default(0)
+  actualUpi       Float    @default(0)
+  actualCard      Float    @default(0)
+  actualCheque    Float    @default(0)
+  actualOther     Float    @default(0)
+  variance        Float    @default(0)
+  varianceNote    String?
+  denominations   String?  // JSON
+  denominationTotal Float  @default(0)
+  drawerStatus    String   @default("open") // open | closed | mismatch | balanced | approved
+  approvedByName  String?
+  approvedAt      DateTime?
+  approvalNote    String?
+  reopenedByName  String?
+  reopenedAt      DateTime?
+  reopenReason    String?
+  notes           String?
+  billsCount      Int      @default(0)
+  paymentsCount   Int      @default(0)
+  totalExpected   Float    @default(0)
+  totalActual     Float    @default(0)
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([closureDate])
+}
+
+model DrawerAuditLog {
+  id              String   @id @default(cuid())
+  userDayClosureId String?
+  userId          String?
+  userName        String?
+  action          String   // closed | mismatch_detected | approved | reopened
+  details         String?  // JSON
+  createdAt       DateTime @default(now())
+}
+
+// ============================================================
+// STAFF (HR)
+// ============================================================
+model Staff {
+  id              String   @id @default(cuid())
+  staffId         String   @unique // EMP-####
+  firstName       String
+  lastName        String?
+  phone           String?
+  email           String?
+  role            String   @default("other") // receptionist | lab-technician | radiologist | phlebotomist | doctor | nurse | manager | accountant | cleaner | security | other
+  department      String?
+  joiningDate     String?  // YYYY-MM-DD
+  baseSalary      Float    @default(0)
+  address         String?
+  emergencyContact String?
+  bankAccount     String?
+  ifsc            String?
+  notes           String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  advances        StaffAdvance[]
+  salaryPayments  StaffSalaryPayment[]
+  attendance      StaffAttendance[]
+}
+
+model StaffAdvance {
+  id              String   @id @default(cuid())
+  staffId         String
+  amount          Float
+  advanceDate     String   // YYYY-MM-DD
+  paymentMode     String   @default("cash")
+  reason          String?
+  recoveredAmount Float    @default(0)
+  status          String   @default("outstanding") // outstanding | cleared
+  createdAt       DateTime @default(now())
+
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+}
+
+model StaffSalaryPayment {
+  id              String   @id @default(cuid())
+  staffId         String
+  monthYear       String   // YYYY-MM
+  baseAmount      Float
+  bonus           Float    @default(0)
+  deductions      Float    @default(0)
+  advanceDeducted Float    @default(0)
+  daysPresent     Int?
+  daysAbsent      Int?
+  netAmount       Float
+  paymentDate     String   // YYYY-MM-DD
+  paymentMode     String   @default("cash")
+  reference       String?
+  paidById        String?
+  createdAt       DateTime @default(now())
+
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  paidBy          User?    @relation("SalaryPaidBy", fields: [paidById], references: [id])
+
+  @@index([staffId])
+  @@index([monthYear])
+}
+
+model StaffAttendance {
+  id              String   @id @default(cuid())
+  staffId         String
+  attendanceDate  String   // YYYY-MM-DD
+  punchIn         DateTime?
+  punchOut        DateTime?
+  source          String   @default("manual") // manual | biometric | webauthn
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, attendanceDate])
+  @@index([staffId])
+  @@index([attendanceDate])
+}
+
+model StaffCounter {
+  id              Int      @id @default(1)
+  counter         Int      @default(0)
+}

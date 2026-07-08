@@ -1,0 +1,541 @@
+     1→import { lazy, Suspense, useEffect, useState } from "react";
+     2→import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+     3→import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+     4→import { Toaster } from "@/components/ui/toaster";
+     5→import { TooltipProvider } from "@/components/ui/tooltip";
+     6→import Layout from "@/components/Layout";
+     7→import { ModuleErrorBoundary } from "@/components/ModuleErrorBoundary";
+     8→import { readStaffSession, canAccess, firstPermissionedPath, firstAllowedPath, longestMatchingNavPath, FULL_ACCESS_ROLES, normalizeRole } from "@/lib/staffSession";
+     9→
+    10→
+    11→const BillingDesk     = lazy(() => import("@/pages/BillingDesk"));
+    12→const Dashboard       = lazy(() => import("@/pages/Dashboard"));
+    13→const Diagnostics     = lazy(() => import("@/pages/Diagnostics"));
+    14→const Patients        = lazy(() => import("@/pages/Patients"));
+    15→const PatientDetail   = lazy(() => import("@/pages/PatientDetail"));
+    16→const Tests           = lazy(() => import("@/pages/Tests"));
+    17→const Orders          = lazy(() => import("@/pages/Orders"));
+    18→const OrderDetail     = lazy(() => import("@/pages/OrderDetail"));
+    19→const Billing         = lazy(() => import("@/pages/Billing"));
+    20→const BillDetail      = lazy(() => import("@/pages/BillDetail"));
+    21→const Payments        = lazy(() => import("@/pages/Payments"));
+    22→const Doctors         = lazy(() => import("@/pages/Doctors"));
+    23→const Reports         = lazy(() => import("@/pages/Reports"));
+    24→const ReportGenerator = lazy(() => import("@/pages/ReportGenerator"));
+    25→const Inventory       = lazy(() => import("@/pages/Inventory"));
+    26→const Referrals       = lazy(() => import("@/pages/Referrals"));
+    27→const Accounting      = lazy(() => import("@/pages/Accounting"));
+    28→const Banking         = lazy(() => import("@/pages/Banking"));
+    29→const Register        = lazy(() => import("@/pages/Register"));
+    30→const Settings        = lazy(() => import("@/pages/Settings"));
+    31→const SystemUpdate    = lazy(() => import("@/pages/SystemUpdate"));
+    32→const Dues            = lazy(() => import("@/pages/Dues"));
+    33→const DicomNodes      = lazy(() => import("@/pages/DicomNodes"));
+    34→const Discounts       = lazy(() => import("@/pages/Discounts"));
+    35→const PACS            = lazy(() => import("@/pages/PACS"));
+    36→const Appointments    = lazy(() => import("@/pages/Appointments"));
+    37→const Packages        = lazy(() => import("@/pages/Packages"));
+    38→const Expenses        = lazy(() => import("@/pages/Expenses"));
+    39→const DayClose        = lazy(() => import("@/pages/DayClose"));
+    40→const MyDayClose      = lazy(() => import("@/pages/MyDayClose"));
+    41→const BooksSanity     = lazy(() => import("@/pages/BooksSanity"));
+    42→const Staff           = lazy(() => import("@/pages/Staff"));
+    43→const HRForms         = lazy(() => import("@/pages/HRForms"));
+    44→const QueuePage       = lazy(() => import("@/pages/Queue"));
+    45→const Radiology       = lazy(() => import("@/pages/Radiology"));
+    46→const RadiologyLegacy = lazy(() => import("@/pages/RadiologyLegacy"));
+    47→const RadiologyWorklist = lazy(() => import("@/pages/RadiologyWorklist"));
+    48→const RadiologistCockpit = lazy(() => import("@/pages/RadiologistCockpit"));
+    49→const RadiologyReportEditor = lazy(() => import("@/pages/RadiologyReportEditor"));
+    50→const RadiologyReportUnified = lazy(() => import("@/pages/RadiologyReportUnified"));
+    51→const RadiologyReportGen = lazy(() => import("@/pages/RadiologyReportGenerator"));
+    52→const RadiologyReportingWorkspace = lazy(() => import("@/pages/RadiologyReportingWorkspace"));
+    53→const PacsDashboard         = lazy(() => import("@/pages/PacsDashboard"));
+    54→const RadiologySettings     = lazy(() => import("@/pages/RadiologySettings"));
+    55→const RadiologySettingsCenter = lazy(() => import("@/pages/RadiologySettingsCenter"));
+    56→const RadiologyQuickSelectSettings = lazy(() => import("@/pages/RadiologyQuickSelectSettings"));
+    57→const RadiologyOperationsDashboard = lazy(() => import("@/pages/RadiologyOperationsDashboard"));
+    58→const MyReportingAnalytics         = lazy(() => import("@/pages/MyReportingAnalytics"));
+    59→const AiPromptTemplates     = lazy(() => import("@/pages/AiPromptTemplates"));
+    60→const AiPromptManager       = lazy(() => import("@/pages/AiPromptManager"));
+    61→const AiComparisonWorkspace = lazy(() => import("@/pages/AiComparisonWorkspace"));
+    62→const MissedFindingDetector = lazy(() => import("@/pages/MissedFindingDetector"));
+    63→const ImageReviewAssistant  = lazy(() => import("@/pages/ImageReviewAssistant"));
+    64→const ProviderFallback      = lazy(() => import("@/pages/ProviderFallback"));
+    65→const TeachingFiles         = lazy(() => import("@/pages/TeachingFiles"));
+    66→const TeachingCaseDetail    = lazy(() => import("@/pages/TeachingCaseDetail"));
+    67→const TeachingCollections   = lazy(() => import("@/pages/TeachingCaseCollections"));
+    68→const TeachingFavorites     = lazy(() => import("@/pages/TeachingFavorites"));
+    69→const TeachingAIAssistant   = lazy(() => import("@/pages/TeachingAIAssistant"));
+    70→const TeachingResearchMode  = lazy(() => import("@/pages/TeachingResearchMode"));
+    71→const TeachingMode          = lazy(() => import("@/pages/TeachingMode"));
+    72→const TeachingAnalytics     = lazy(() => import("@/pages/TeachingAnalytics"));
+    73→const TeachingPresentationMode = lazy(() => import("@/pages/TeachingPresentationMode"));
+    74→const RadiologyProductivity   = lazy(() => import("@/pages/RadiologyProductivity"));
+    75→const AiModelRouting        = lazy(() => import("@/pages/AiModelRouting"));
+    76→const ReportTemplatesPage   = lazy(() => import("@/pages/ReportTemplates"));
+    77→const AiAuditLog            = lazy(() => import("@/pages/AiAuditLog"));
+    78→const AiQualityScores       = lazy(() => import("@/pages/AiQualityScores"));
+    79→const AiPromptEffectiveness = lazy(() => import("@/pages/AiPromptEffectiveness"));
+    80→const AiDicomFindings       = lazy(() => import("@/pages/AiDicomFindings"));
+    81→const RagVectorStore        = lazy(() => import("@/pages/RagVectorStore"));
+    82→const AiSearchRetrieval     = lazy(() => import("@/pages/AiSearchRetrieval"));
+    83→const AnomalyAlerts         = lazy(() => import("@/pages/AnomalyAlerts"));
+    84→const ReportDiffViewer      = lazy(() => import("@/pages/ReportDiffViewer"));
+    85→const FeedbackLoopAnalytics = lazy(() => import("@/pages/FeedbackLoopAnalytics"));
+    86→const TemplateVersions      = lazy(() => import("@/pages/TemplateVersions"));
+    87→const AiBillingSuggestions  = lazy(() => import("@/pages/AiBillingSuggestions"));
+    88→const PeerReviewAssignments = lazy(() => import("@/pages/PeerReviewAssignments"));
+    89→const TurnaroundTimeAnalytics = lazy(() => import("@/pages/TurnaroundTimeAnalytics"));
+    90→const TrainingDataExports   = lazy(() => import("@/pages/TrainingDataExports"));
+    91→const ReportQualityGates    = lazy(() => import("@/pages/ReportQualityGates"));
+    92→const CriticalFindings      = lazy(() => import("@/pages/CriticalFindings"));
+    93→const ProviderHealthMonitor = lazy(() => import("@/pages/ProviderHealthMonitor"));
+    94→const CommandCenter         = lazy(() => import("@/pages/CommandCenter"));
+    95→const VoiceDictation        = lazy(() => import("@/pages/VoiceDictation"));
+    96→const PatientCommunication  = lazy(() => import("@/pages/PatientCommunication"));
+    97→const NormalReportTemplates = lazy(() => import("@/pages/NormalReportTemplates"));
+    98→const DicomViewer           = lazy(() => import("@/pages/DicomViewer"));
+    99→const AgentSetup            = lazy(() => import("@/pages/AgentSetup"));
+   100→const PacsSettings          = lazy(() => import("@/pages/PacsSettings"));
+   101→const PacsLogs              = lazy(() => import("@/pages/PacsLogs"));
+   102→const DicomAgentDashboard   = lazy(() => import("@/pages/DicomAgentDashboard"));
+   103→const ModalityManagement    = lazy(() => import("@/pages/ModalityManagement"));
+   104→const AiReportingSettings   = lazy(() => import("@/pages/AiReportingSettings"));
+   105→const KnowledgeBaseManager  = lazy(() => import("@/pages/KnowledgeBaseManager"));
+   106→const AiCallerCredentials   = lazy(() => import("@/pages/AiCallerCredentials"));
+   107→const ReceptionCommandCenter = lazy(() => import("@/pages/ReceptionCommandCenter"));
+   108→const MyCollection          = lazy(() => import("@/pages/MyCollection"));
+   109→const PacsArchiveLifecycle  = lazy(() => import("@/pages/PacsArchiveLifecycle"));
+   110→const PacsWatchdogDashboard = lazy(() => import("@/pages/PacsWatchdogDashboard"));
+   111→const AiInferenceSettings   = lazy(() => import("@/pages/AiInferenceSettings"));
+   112→const Hl7Settings           = lazy(() => import("@/pages/Hl7Settings"));
+   113→const BackupReplication     = lazy(() => import("@/pages/BackupReplication"));
+   114→const UsgMeasurementReview  = lazy(() => import("@/pages/UsgMeasurementReview"));
+   115→const UsgAdminSettings      = lazy(() => import("@/pages/UsgAdminSettings"));
+   116→const UsgDoppler            = lazy(() => import("@/pages/UsgDoppler"));
+   117→const UsgWorklist           = lazy(() => import("@/pages/UsgWorklist"));
+   118→const UsgReporting          = lazy(() => import("@/pages/UsgReporting"));
+   119→const UsgDopplerReporting   = lazy(() => import("@/pages/UsgDopplerReporting"));
+   120→const UsgKeyImagesGallery   = lazy(() => import("@/pages/UsgKeyImagesGallery"));
+   121→const UsgCriticalAlerts     = lazy(() => import("@/pages/UsgCriticalAlerts"));
+   122→const UsgAnalytics          = lazy(() => import("@/pages/UsgAnalytics"));
+   123→const PregnancyDashboard    = lazy(() => import("@/pages/PregnancyDashboard"));
+   124→const ReportHub       = lazy(() => import("@/pages/ReportHub"));
+   125→const Machines        = lazy(() => import("@/pages/Machines"));
+   126→const FormF           = lazy(() => import("@/pages/FormF"));
+   127→const Website         = lazy(() => import("@/pages/Website"));
+   128→const WhatsAppChatbot = lazy(() => import("@/pages/WhatsAppChatbot"));
+   129→const Portal          = lazy(() => import("@/pages/Portal"));
+   130→const VerifyReceipt   = lazy(() => import("@/pages/VerifyReceipt"));
+   131→const Display         = lazy(() => import("@/pages/Display"));
+   132→const QueueDisplay     = lazy(() => import("@/pages/QueueDisplay"));
+   133→const PaymentQrDisplay = lazy(() => import("@/pages/PaymentQrDisplay"));
+   134→const OnlineBookings  = lazy(() => import("@/pages/OnlineBookings"));
+   135→const DicomStudyWorklist    = lazy(() => import("@/pages/DicomStudyWorklist"));
+   136→const RadiologistQueue      = lazy(() => import("@/pages/RadiologistQueue"));
+   137→const TechnicianWorkflow    = lazy(() => import("@/pages/TechnicianWorkflow"));
+   138→const AiExtractionReview    = lazy(() => import("@/pages/AiExtractionReview"));
+   139→const HangingProtocols      = lazy(() => import("@/pages/HangingProtocols"));
+   140→const TeleradiologyPortal = lazy(() => import("@/pages/TeleradiologyPortal"));
+   141→const MobileViewer    = lazy(() => import("@/pages/MobileViewer"));
+   142→const DailySummary    = lazy(() => import("@/pages/DailySummary"));
+   143→const MyDailySummary  = lazy(() => import("@/pages/MyDailySummary"));
+   144→const OutsourcedLabs       = lazy(() => import("@/pages/OutsourcedLabs"));
+   145→const OutsourcedCostReport = lazy(() => import("@/pages/OutsourcedCostReport"));
+   146→const OutsourceSettings       = lazy(() => import("@/pages/OutsourceSettings"));
+   147→const OutsourceRateCards      = lazy(() => import("@/pages/OutsourceRateCards"));
+   148→const OutsourceWorklist       = lazy(() => import("@/pages/OutsourceWorklist"));
+   149→const OutsourceReconciliation = lazy(() => import("@/pages/OutsourceReconciliation"));
+   150→const OutsourceLedger         = lazy(() => import("@/pages/OutsourceLedger"));
+   151→const OutsourceDashboard      = lazy(() => import("@/pages/OutsourceDashboard"));
+   152→const Samples              = lazy(() => import("@/pages/Samples"));
+   153→const ScanStation     = lazy(() => import("@/pages/ScanStation"));
+   154→const ReportDelivery  = lazy(() => import("@/pages/ReportDelivery"));
+   155→const Kiosk           = lazy(() => import("@/pages/Kiosk"));
+   156→const NotFound        = lazy(() => import("@/pages/not-found"));
+   157→const NetworkControlCenter = lazy(() => import("@/pages/NetworkControlCenter"));
+   158→const RadiologyCommandCenter = lazy(() => import("@/pages/RadiologyCommandCenter"));
+   159→const RadiologyAdvancedTools = lazy(() => import("@/pages/RadiologyAdvancedTools"));
+   160→const AcquisitionGateway     = lazy(() => import("@/pages/AcquisitionGateway"));
+   161→const MwlManager             = lazy(() => import("@/pages/MwlManager"));
+   162→const AiPipelineManager      = lazy(() => import("@/pages/AiPipelineManager"));
+   163→const CriticalAlertsManager  = lazy(() => import("@/pages/CriticalAlertsManager"));
+   164→const StorageLifecycle       = lazy(() => import("@/pages/StorageLifecycle"));
+   165→const RadiologistTools       = lazy(() => import("@/pages/RadiologistTools"));
+   166→const EchoCardiology         = lazy(() => import("@/pages/EchoCardiology"));
+   167→const FetalEcho              = lazy(() => import("@/pages/FetalEcho"));
+   168→const FetalUsgLevel4         = lazy(() => import("@/pages/FetalUsgLevel4"));
+   169→
+   170→function PageLoader() {
+   171→  return (
+   172→    <div className="flex items-center justify-center min-h-[60vh]">
+   173→      <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+   174→    </div>
+   175→  );
+   176→}
+   177→
+   178→const queryClient = new QueryClient({
+   179→  defaultOptions: {
+   180→    queries: {
+   181→      retry: 1,
+   182→      staleTime: 5 * 60_000,
+   183→      refetchOnWindowFocus: true,
+   184→      refetchOnReconnect: true,
+   185→      refetchInterval: 60_000,
+   186→      refetchIntervalInBackground: false,
+   187→    },
+   188→  },
+   189→});
+   190→
+   191→const ERP_NAV_ORDER = [
+   192→  "/", "/dashboard", "/my-daily-summary", "/reception-command-center", "/daily-summary", "/patients", "/appointments", "/queue", "/online-bookings",
+   193→  "/radiology", "/radiology/cockpit", "/radiology/legacy", "/radiology/worklist", "/radiology/report-generator", "/radiology/reporting-workspace", "/radiology/advanced-tools", "/radiology/pacs-dashboard", "/radiology/pacs-settings", "/radiology/network-control-center", "/radiology/pacs-logs",
+   194→  "/radiology/dicom-agent-dashboard", "/radiology/modality-management",
+   195→  "/radiology/agent-setup", "/radiology/ai-reporting-settings", "/radiology/ai-prompt-templates", "/radiology/ai-model-routing", "/radiology/structured-report-templates", "/radiology/ai-audit-log",
+   196→  "/radiology/viewer", "/radiology/archive-lifecycle", "/radiology/watchdog", "/radiology/ai-inference-settings", "/radiology/hl7-settings", "/teleradiology",
+   197→  "/radiology/usg-measurements", "/radiology/usg-admin-settings",
+   198→  "/usg", "/usg/worklist", "/usg/measurements", "/usg/reporting", "/usg/doppler", "/usg/key-images", "/usg/settings", "/usg/critical", "/usg/analytics",
+   199→  "/teaching-cases", "/teaching-collections", "/teaching-favorites", "/teaching-ai", "/teaching-research", "/teaching-mode", "/teaching-analytics", "/teaching-presentation",
+   200→  "/echo", "/fetal-echo", "/fetal-usg", "/fetal-usg/:studyId",
+   201→  "/settings/radiology", "/backup-replication",
+   202→  "/orders", "/tests", "/packages", "/billing", "/payments", "/reports",
+   203→  "/report-generator", "/report-hub", "/inventory", "/expenses", "/staff", "/referrals",
+   204→  "/accounting", "/discounts", "/form-f", "/machines", "/hr-forms", "/website", "/whatsapp-chatbot", "/settings", "/knowledge-base", "/ai-caller-credentials",
+   205→  "/samples",
+   206→  "/pacs", "/dicom-nodes",
+   207→  "/outsource/settings", "/outsource/rate-cards", "/outsource/worklist", "/outsource/reconciliation", "/outsource/ledger", "/outsource/dashboard",
+   208→];
+   209→
+   210→function PermissionGuard() {
+   211→  const [location, navigate] = useLocation();
+   212→  useEffect(() => {
+   213→    const session = readStaffSession();
+   214→    if (!session) {
+   215→      navigate("/portal", { replace: true });
+   216→      return;
+   217→    }
+   218→    // Owner Dashboard is admin/super_admin only — redirect others to My Daily Summary.
+   219→    const normalizedRole = normalizeRole(session.user.role);
+   220→    if ((location === "/dashboard" || location === "/diagnostics") && !FULL_ACCESS_ROLES.has(normalizedRole)) {
+   221→      navigate("/my-daily-summary", { replace: true });
+   222→      return;
+   223→    }
+   224→    // Super Admin Portal is super_admin only
+   225→    if (location.startsWith("/super-admin-portal") && normalizedRole !== "super_admin") {
+   226→      navigate("/", { replace: true });
+   227→      return;
+   228→    }
+   229→    // Redirect root "/" to user's default start page if configured and allowed
+   230→    if (location === "/" && session.user.defaultStartPage && session.user.defaultStartPage !== "/" && canAccess(session, session.user.defaultStartPage)) {
+   231→      navigate(session.user.defaultStartPage, { replace: true });
+   232→      return;
+   233→    }
+   234→    const matched = longestMatchingNavPath(location, ERP_NAV_ORDER);
+   235→    const pathToCheck = matched ?? location;
+   236→    if (!canAccess(session, pathToCheck)) {
+   237→      let target = "/";
+   238→      if (session.user.defaultStartPage && canAccess(session, session.user.defaultStartPage)) {
+   239→        target = session.user.defaultStartPage;
+   240→      } else {
+   241→        target = firstPermissionedPath(session, ERP_NAV_ORDER) ?? firstAllowedPath(session, ERP_NAV_ORDER);
+   242→      }
+   243→      navigate(target, { replace: true });
+   244→    }
+   245→  }, [location, navigate]);
+   246→  return null;
+   247→}
+   248→
+   249→function Router() {
+   250→  const [location] = useLocation();
+   251→  const [portalLoaded, setPortalLoaded] = useState(() => typeof window !== "undefined" && !!(window as any).SuperAdminPortal);
+   252→
+   253→  useEffect(() => {
+   254→    const handleLoaded = () => setPortalLoaded(true);
+   255→    const handleUnloaded = () => setPortalLoaded(false);
+   256→
+   257→    window.addEventListener("superadmin-ui-loaded", handleLoaded);
+   258→    window.addEventListener("superadmin-ui-unloaded", handleUnloaded);
+   259→
+   260→    return () => {
+   261→      window.removeEventListener("superadmin-ui-loaded", handleLoaded);
+   262→      window.removeEventListener("superadmin-ui-unloaded", handleUnloaded);
+   263→    };
+   264→  }, []);
+   265→
+   266→  return (
+   267→    <Suspense fallback={<PageLoader />}>
+   268→      <Switch>
+   269→        <Route path="/portal" component={Portal} />
+   270→        <Route path="/portal/:rest*" component={Portal} />
+   271→        <Route path="/erp/portal" component={Portal} />
+   272→        <Route path="/erp/portal/:rest*" component={Portal} />
+   273→        {/* Routing fix (July 2026): the ERP has no historically-canonical
+   274→            "/login" path — staff sign in via the Portal landing page at
+   275→            /erp/portal(/staff-login). These aliases make /erp/login and
+   276→            /erp/login/* work directly, per the required public routing
+   277→            contract (public website "Staff Login" button → /erp/login).
+   278→            wouter's base="/erp" already strips the prefix before matching,
+   279→            so the reachable route in production is the plain "/login" one;
+   280→            the "/erp/login" duplicate mirrors the existing /erp/portal
+   281→            pattern for dev-mode (BASE_URL="/") parity. */}
+   282→        <Route path="/login" component={Portal} />
+   283→        <Route path="/login/:rest*" component={Portal} />
+   284→        <Route path="/erp/login" component={Portal} />
+   285→        <Route path="/erp/login/:rest*" component={Portal} />
+   286→        <Route path="/teleradiology" component={TeleradiologyPortal} />
+   287→        <Route path="/teleradiology/:rest*" component={TeleradiologyPortal} />
+   288→        <Route path="/verify-receipt/:billId" component={VerifyReceipt} />
+   289→        <Route path="/display" component={Display} />
+   290→        <Route path="/display/payment-qr" component={PaymentQrDisplay} />
+   291→        {/* Primary URL per spec: caredeoghar.com/queue/usg, /queue/mri, etc. */}
+   292→        <Route path="/queue/:roomKey" component={QueueDisplay} />
+   293→        {/* Kept for backward compatibility with any already-configured TVs */}
+   294→        <Route path="/display/:roomKey" component={QueueDisplay} />
+   295→        <Route path="/kiosk" component={Kiosk} />
+   296→        <Route>
+   297→          <PermissionGuard />
+   298→          <Layout>
+   299→            <ModuleErrorBoundary resetKey={location}>
+   300→            <Switch>
+   301→              <Route path="/home" component={BillingDesk} />
+   302→              <Route path="/" component={BillingDesk} />
+   303→              <Route path="/dashboard" component={Dashboard} />
+   304→              <Route path="/diagnostics" component={Diagnostics} />
+   305→              <Route path="/patients" component={Patients} />
+   306→              <Route path="/patients/:id">
+   307→                {(params) => <PatientDetail id={Number(params.id)} />}
+   308→              </Route>
+   309→              <Route path="/tests" component={Tests} />
+   310→              <Route path="/orders" component={Orders} />
+   311→              <Route path="/orders/:id">
+   312→                {(params) => <OrderDetail id={Number(params.id)} />}
+   313→              </Route>
+   314→              <Route path="/billing" component={Billing} />
+   315→              <Route path="/billing/:id">
+   316→                {(params) => <BillDetail id={Number(params.id)} />}
+   317→              </Route>
+   318→              <Route path="/payments" component={Payments} />
+   319→              <Route path="/dues" component={Dues} />
+   320→              <Route path="/doctors" component={Doctors} />
+   321→              <Route path="/reports" component={Reports} />
+   322→              <Route path="/report-generator" component={ReportGenerator} />
+   323→              <Route path="/report-hub" component={ReportHub} />
+   324→              <Route path="/inventory" component={Inventory} />
+   325→              <Route path="/referrals" component={Referrals} />
+   326→              <Route path="/accounting" component={Accounting} />
+   327→              <Route path="/banking" component={Banking} />
+   328→              <Route path="/register" component={Register} />
+   329→              <Route path="/discounts" component={Discounts} />
+   330→              <Route path="/pacs" component={PACS} />
+   331→              <Route path="/dicom-nodes" component={DicomNodes} />
+   332→              <Route path="/appointments" component={Appointments} />
+   333→              <Route path="/daily-summary" component={DailySummary} />
+   334→              <Route path="/my-daily-summary" component={MyDailySummary} />
+   335→              <Route path="/online-bookings" component={OnlineBookings} />
+   336→              <Route path="/queue" component={QueuePage} />
+   337→              <Route path="/radiology" component={Radiology} />
+   338→              <Route path="/radiology/cockpit" component={RadiologistCockpit} />
+   339→              <Route path="/radiology/my-collection" component={MyCollection} />
+   340→              <Route path="/radiology/worklist" component={RadiologyWorklist} />
+   341→              <Route path="/radiology/report-generator">
+   342→                {() => <RadiologyReportGen />}
+   343→              </Route>
+   344→              <Route path="/radiology/report-generator/:studyId">
+   345→                {(params) => <RadiologyReportGen studyId={Number(params.studyId)} />}
+   346→              </Route>
+   347→              {/* Cockpit unification (July 2026): /radiology/report/:studyId is
+   348→                  now the single radiologist working page, served by the full
+   349→                  Reporting Workspace (viewer buttons, dictation, templates,
+   350→                  quick-select, prior reports, finalize, print). Both pages
+   351→                  fetch the same /api/internal/radiology/worklist/:id entry,
+   352→                  so the swap is data-compatible. The older simple editor
+   353→                  stays reachable at /radiology/report-legacy/:studyId for
+   354→                  one release in case of muscle-memory bookmarks. */}
+   355→              <Route path="/radiology/report/:studyId">
+   356→                {(params) => <RadiologyReportingWorkspace studyId={Number(params.studyId)} />}
+   357→              </Route>
+   358→              <Route path="/radiology/report-legacy/:studyId">
+   359→                {(params) => <RadiologyReportEditor studyId={Number(params.studyId)} />}
+   360→              </Route>
+   361→              <Route path="/radiology/reporting-workspace">
+   362→                {() => <RadiologyReportingWorkspace />}
+   363→              </Route>
+   364→              <Route path="/radiology/reporting-workspace/:studyId">
+   365→                {(params) => <RadiologyReportingWorkspace studyId={Number(params.studyId)} />}
+   366→              </Route>
+   367→              <Route path="/radiology/unified-report/:worklistId">
+   368→                {(params) => <RadiologyReportingWorkspace studyId={Number(params.worklistId)} />}
+   369→              </Route>
+   370→              <Route path="/radiology/pacs-dashboard" component={PacsDashboard} />
+   371→              <Route path="/radiology/operations-dashboard" component={RadiologyOperationsDashboard} />
+   372→              <Route path="/radiology/my-analytics" component={MyReportingAnalytics} />
+   373→              <Route path="/radiology/pacs-settings" component={PacsSettings} />
+   374→              <Route path="/radiology/network-control-center" component={NetworkControlCenter} />
+   375→              <Route path="/radiology/pacs-logs" component={PacsLogs} />
+   376→              <Route path="/radiology/dicom-agent-dashboard" component={DicomAgentDashboard} />
+   377→              <Route path="/radiology/modality-management" component={ModalityManagement} />
+   378→              <Route path="/radiology/viewer/:studyInstanceUID" component={DicomViewer} />
+   379→              <Route path="/radiology/agent-setup" component={AgentSetup} />
+   380→              <Route path="/radiology/ai-reporting-settings" component={AiReportingSettings} />
+   381→              <Route path="/knowledge-base" component={KnowledgeBaseManager} />
+   382→              <Route path="/ai-caller-credentials" component={AiCallerCredentials} />
+   383→              <Route path="/reception-command-center" component={ReceptionCommandCenter} />
+   384→              <Route path="/radiology/ai-prompt-templates" component={AiPromptTemplates} />
+   385→              <Route path="/radiology/ai-prompt-manager" component={AiPromptManager} />
+   386→              <Route path="/radiology/ai-comparison" component={AiComparisonWorkspace} />
+   387→              <Route path="/radiology/missed-finding-detector" component={MissedFindingDetector} />
+   388→              <Route path="/radiology/image-review" component={ImageReviewAssistant} />
+   389→              <Route path="/radiology/provider-fallback" component={ProviderFallback} />
+   390→              <Route path="/teaching-cases" component={TeachingFiles} />
+   391→              <Route path="/teaching-cases/:id" component={TeachingCaseDetail} />
+   392→              <Route path="/teaching-collections" component={TeachingCollections} />
+   393→              <Route path="/teaching-collections/:id" component={TeachingCollections} />
+   394→              <Route path="/teaching-favorites" component={TeachingFavorites} />
+   395→              <Route path="/teaching-ai" component={TeachingAIAssistant} />
+   396→              <Route path="/teaching-research" component={TeachingResearchMode} />
+   397→              <Route path="/teaching-mode" component={TeachingMode} />
+   398→              <Route path="/teaching-analytics" component={TeachingAnalytics} />
+   399→              <Route path="/teaching-presentation" component={TeachingPresentationMode} />
+   400→              <Route path="/radiology/productivity" component={RadiologyProductivity} />
+   401→              <Route path="/radiology/ai-model-routing" component={AiModelRouting} />
+   402→              <Route path="/radiology/structured-report-templates" component={ReportTemplatesPage} />
+   403→              <Route path="/radiology/ai-audit-log" component={AiAuditLog} />
+   404→      <Route path="/radiology/ai-quality-scores" component={AiQualityScores} />
+   405→      <Route path="/radiology/ai-prompt-effectiveness" component={AiPromptEffectiveness} />
+   406→      <Route path="/radiology/ai-dicom-findings" component={AiDicomFindings} />
+   407→      <Route path="/radiology/rag-vector-store" component={RagVectorStore} />
+   408→      <Route path="/radiology/ai-search-retrieval" component={AiSearchRetrieval} />
+   409→      <Route path="/radiology/anomaly-alerts" component={AnomalyAlerts} />
+   410→      <Route path="/radiology/report-diff" component={ReportDiffViewer} />
+   411→      <Route path="/radiology/feedback-loop-analytics" component={FeedbackLoopAnalytics} />
+   412→      <Route path="/radiology/template-versions" component={TemplateVersions} />
+   413→      <Route path="/radiology/billing-suggestions" component={AiBillingSuggestions} />
+   414→      <Route path="/radiology/peer-review-assignments" component={PeerReviewAssignments} />
+   415→      <Route path="/radiology/turnaround-times" component={TurnaroundTimeAnalytics} />
+   416→      <Route path="/radiology/training-data-exports" component={TrainingDataExports} />
+   417→      <Route path="/radiology/quality-gates" component={ReportQualityGates} />
+   418→      <Route path="/radiology/critical-findings" component={CriticalFindings} />
+   419→      <Route path="/radiology/provider-health" component={ProviderHealthMonitor} />
+   420→      <Route path="/radiology/voice-dictation" component={VoiceDictation} />
+   421→      <Route path="/radiology/patient-communication" component={PatientCommunication} />
+   422→      <Route path="/radiology/normal-templates" component={NormalReportTemplates} />
+   423→              <Route path="/radiology/archive-lifecycle" component={PacsArchiveLifecycle} />
+   424→              <Route path="/radiology/watchdog" component={PacsWatchdogDashboard} />
+   425→              <Route path="/radiology/ai-inference-settings" component={AiInferenceSettings} />
+   426→              <Route path="/radiology/hl7-settings" component={Hl7Settings} />
+   427→              {/* Phase 12: Real Radiology Workflow & DICOM Operations */}
+   428→              <Route path="/radiology/command-center/:studyId">
+   429→                {(params) => <RadiologyCommandCenter studyId={Number(params.studyId)} />}
+   430→              </Route>
+   431→              <Route path="/radiology/command-center">
+   432→                {() => <RadiologyCommandCenter />}
+   433→              </Route>
+   434→              <Route path="/radiology/legacy" component={RadiologyLegacy} />
+   435→              <Route path="/radiology/advanced-tools" component={RadiologyAdvancedTools} />
+   436→              <Route path="/radiology/acquisition-gateway" component={AcquisitionGateway} />
+   437→              <Route path="/radiology/mwl-manager" component={MwlManager} />
+   438→              <Route path="/radiology/ai-pipeline" component={AiPipelineManager} />
+   439→              <Route path="/radiology/critical-alerts" component={CriticalAlertsManager} />
+   440→              <Route path="/radiology/storage-lifecycle" component={StorageLifecycle} />
+   441→              <Route path="/radiology/productivity-tools" component={RadiologistTools} />
+   442→              <Route path="/radiology/usg-measurements/:studyInstanceUID" component={UsgMeasurementReview} />
+   443→              <Route path="/radiology/usg-measurements" component={UsgMeasurementReview} />
+   444→              <Route path="/radiology/usg-admin-settings" component={UsgAdminSettings} />
+   445→              {/* USG / DOPPLER module */}
+   446→              <Route path="/usg" component={UsgDoppler} />
+   447→              <Route path="/usg/worklist" component={UsgWorklist} />
+   448→              <Route path="/usg/measurements/:studyInstanceUID" component={UsgMeasurementReview} />
+   449→              <Route path="/usg/measurements" component={UsgMeasurementReview} />
+   450→              <Route path="/usg/reporting" component={UsgReporting} />
+   451→              <Route path="/usg/doppler" component={UsgDopplerReporting} />
+   452→              <Route path="/usg/key-images" component={UsgKeyImagesGallery} />
+   453→              <Route path="/usg/critical" component={UsgCriticalAlerts} />
+   454→              <Route path="/usg/settings" component={UsgAdminSettings} />
+   455→              <Route path="/usg/analytics" component={UsgAnalytics} />
+   456→              <Route path="/usg/pregnancy-dashboard" component={PregnancyDashboard} />
+   457→              <Route path="/backup-replication" component={BackupReplication} />
+   458→              {/* Phase 10 RIS/PACS Foundation */}
+   459→              <Route path="/radiology/dicom-study-worklist" component={DicomStudyWorklist} />
+   460→              <Route path="/radiology/radiologist-queue" component={RadiologistQueue} />
+   461→              <Route path="/radiology/technician-workflow/:studyId">
+   462→                {(params) => <TechnicianWorkflow studyId={Number(params.studyId)} />}
+   463→              </Route>
+   464→              <Route path="/radiology/technician-workflow">
+   465→                {() => <TechnicianWorkflow />}
+   466→              </Route>
+   467→              <Route path="/radiology/ai-extraction-review" component={AiExtractionReview} />
+   468→              <Route path="/radiology/hanging-protocols" component={HangingProtocols} />
+   469→              <Route path="/echo" component={EchoCardiology} />
+   470→              <Route path="/fetal-echo" component={FetalEcho} />
+   471→              <Route path="/fetal-usg" component={FetalUsgLevel4} />
+   472→              <Route path="/fetal-usg/:studyId">
+   473→                {(params) => <FetalUsgLevel4 />}
+   474→              </Route>
+   475→              <Route path="/m/viewer/:studyInstanceUID" component={MobileViewer} />
+   476→              <Route path="/packages" component={Packages} />
+   477→              <Route path="/expenses" component={Expenses} />
+   478→              <Route path="/my-day-close" component={MyDayClose} />
+   479→              <Route path="/day-close" component={DayClose} />
+   480→              <Route path="/books-sanity" component={BooksSanity} />
+   481→              <Route path="/staff" component={Staff} />
+   482→              <Route path="/hr-forms" component={HRForms} />
+   483→              <Route path="/form-f" component={FormF} />
+   484→              <Route path="/machines" component={Machines} />
+   485→              <Route path="/website" component={Website} />
+   486→              <Route path="/outsourced-labs" component={OutsourcedLabs} />
+   487→              <Route path="/outsourced-cost-report" component={OutsourcedCostReport} />
+   488→              <Route path="/outsource/settings" component={OutsourceSettings} />
+   489→              <Route path="/outsource/rate-cards" component={OutsourceRateCards} />
+   490→              <Route path="/outsource/worklist" component={OutsourceWorklist} />
+   491→              <Route path="/outsource/reconciliation" component={OutsourceReconciliation} />
+   492→              <Route path="/outsource/ledger" component={OutsourceLedger} />
+   493→              <Route path="/outsource/dashboard" component={OutsourceDashboard} />
+   494→              <Route path="/samples" component={Samples} />
+   495→              <Route path="/scan-station" component={ScanStation} />
+   496→              <Route path="/report-delivery" component={ReportDelivery} />
+   497→              {/* /settings/radiology is now the primary radiology settings
+   498→                  page (Task 1 consolidation) — renders RadiologySettingsCenter.
+   499→                  /radiology/settings-center is kept as a working redirect so
+   500→                  existing bookmarks/links (Layout.tsx sidebar, cross-links in
+   501→                  NetworkControlCenter.tsx, DicomNodes.tsx, PacsSettings.tsx,
+   502→                  ModalityManagement.tsx) continue to work without edits. */}
+   503→              <Route path="/settings/radiology" component={RadiologySettingsCenter} />
+   504→              <Route path="/settings/radiology-quick-select" component={RadiologyQuickSelectSettings} />
+   505→              <Route path="/radiology/settings-center" component={RadiologySettings} />
+   506→              <Route path="/settings" component={Settings} />
+   507→              <Route path="/whatsapp-chatbot" component={WhatsAppChatbot} />
+   508→              <Route path="/system-update" component={SystemUpdate} />
+   509→              {portalLoaded && (window as any).SuperAdminPortal && (
+   510→                <Route path="/super-admin-portal/:rest*">
+   511→                  {() => {
+   512→                    const PortalComponent = (window as any).SuperAdminPortal;
+   513→                    return <PortalComponent />;
+   514→                  }}
+   515→                </Route>
+   516→              )}
+   517→              <Route component={NotFound} />
+   518→            </Switch>
+   519→            </ModuleErrorBoundary>
+   520→          </Layout>
+   521→        </Route>
+   522→      </Switch>
+   523→    </Suspense>
+   524→  );
+   525→}
+   526→
+   527→function App() {
+   528→  return (
+   529→    <QueryClientProvider client={queryClient}>
+   530→      <TooltipProvider>
+   531→        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+   532→          <Router />
+   533→        </WouterRouter>
+   534→        <Toaster />
+   535→      </TooltipProvider>
+   536→    </QueryClientProvider>
+   537→  );
+   538→}
+   539→
+   540→export default App;
+   541→
