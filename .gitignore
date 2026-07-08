@@ -52,3 +52,32 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# SQLite database (runtime — created fresh on first run via prisma db push)
+/db/
+*.db
+*.db-journal
+
+# Uploaded files (runtime — user uploads stored in volume in prod)
+/uploads/
+/upload/
+
+# Tool results (scratch)
+/tool-results/
+
+# Reference repo (cloned for development only)
+/ref-repo/
+
+# Downloaded screenshots (runtime artifacts)
+/download/
+
+# zscripts dev artifacts
+/.zscripts/dev.log
+/.zscripts/dev.pid
+
+# bun cache
+.bun/
+
+# Build artifacts
+/build.sh
+/mini-services/
