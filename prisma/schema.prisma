@@ -64,6 +64,8 @@ model User {
   userDayClosures   UserDayClosure[]
   staffSalaryPayments StaffSalaryPayment[] @relation("SalaryPaidBy")
   doctorPayouts     DoctorPayout[] @relation("PayoutBy")
+  expenseBillsUploaded ExpenseBill[] @relation("ExpenseBillUploadedBy")
+  formFRecords      FormFRecord[] @relation("FormFCreatedBy")
 }
 
 model Session {
@@ -411,6 +413,148 @@ model Expense {
 model ExpenseCounter {
   id              Int      @id @default(1)
   yearMonth       String   @unique // YYMM
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// SUPPLIERS (Sundry Creditors / Debtors)
+// ============================================================
+model Supplier {
+  id              String   @id @default(cuid())
+  supplierId      String   @unique // SUP-####
+  name            String
+  type            String   @default("creditor") // creditor | debtor | both
+  phone           String?
+  email           String?
+  contactPerson   String?
+  gstin           String?
+  pan             String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  bankAccount     String?
+  ifsc            String?
+  branch          String?
+  ledgerAccountId String?  // Links to Sundry Creditors/Debtors account
+  openingBalance  Float    @default(0)
+  openingBalanceType String @default("Cr") // Dr | Cr
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bills           ExpenseBill[]
+  @@index([name])
+  @@index([gstin])
+}
+
+// Uploaded expense bills (for OCR + audit)
+model ExpenseBill {
+  id              String   @id @default(cuid())
+  billId          String   @unique // EB-YYMM-####
+  supplierId      String?
+  supplierName    String   // Extracted via OCR
+  supplierGSTIN   String?  // Extracted via OCR
+  billNumber      String?  // Extracted via OCR (supplier's invoice #)
+  billDate        String?  // YYYY-MM-DD
+  dueDate         String?
+  category        String?  // rent | supplies | equipment | etc.
+  description     String?
+  subtotal        Float    @default(0)
+  taxAmount       Float    @default(0)
+  totalAmount     Float    @default(0)
+  lineItems       String?  // JSON array of {name, qty, rate, amount}
+  ocrRawResponse  String?  // Full VLM JSON response for audit
+  ocrConfidence   Float    @default(0) // 0-1
+  status          String   @default("pending") // pending | confirmed | posted | rejected
+  expenseId       String?  // Link to Expense after posting
+  voucherId       String?  // Link to Voucher after posting
+  filePath        String?  // Local storage path of uploaded file
+  fileType        String?  // image/jpeg | application/pdf
+  fileName        String?
+  uploadedById    String?
+  uploadedByName  String?
+  confirmedById   String?
+  confirmedByName String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  supplier        Supplier? @relation(fields: [supplierId], references: [id])
+  uploadedBy      User?    @relation("ExpenseBillUploadedBy", fields: [uploadedById], references: [id])
+  @@index([supplierId])
+  @@index([status])
+  @@index([billDate])
+}
+
+model ExpenseBillCounter {
+  id              Int      @id @default(1)
+  yearMonth       String   @unique
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// FORM F (PCPNDT compliance)
+// ============================================================
+model FormFRecord {
+  id              String   @id @default(cuid())
+  formFId         String   @unique // FF-YYYY-####
+  billId          String?
+  billNumber      String?
+  patientId       String?
+  patientName     String?
+  age             Int?
+  childrenDetails String?
+  husbandFatherName String?
+  address         String?
+  mobile          String?
+  referredBy      String   @default("Self")
+  lmpWeeks        String?
+  geneticHistory  String?
+  basisDiagnosis  String?
+  previousChildIssue String?
+  indicationOther String?
+  doctorName      String?
+  procedure       String?
+  procedurePurpose String?
+  invasiveProcedure String?
+  complication    String?
+  labTests        String?
+  prenatalResult  String?
+  gestationalAgeWeeks Int?
+  gestationalAgeDays  Int?
+  ultrasoundResult String?
+  abnormality     String?
+  procedureDate   String?
+  consentDate     String?
+  resultConveyed  String?
+  mtpAdvised      String?
+  mtpDate         String?
+  date            String?
+  place           String?
+  idCardImageUrl  String?
+  idCardFrontUrl  String?
+  idCardBackUrl   String?
+  idCardExtractedName    String?
+  idCardExtractedAddress String?
+  idCardVerified  Boolean  @default(false)
+  ocrRawResponse  String?  // Form F scan OCR
+  ocrConfidence   Float    @default(0)
+  status          String   @default("draft") // draft | submitted | approved | rejected
+  createdById     String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy       User?    @relation("FormFCreatedBy", fields: [createdById], references: [id])
+  @@index([billId])
+  @@index([patientId])
+  @@index([status])
+}
+
+model FormFCounter {
+  id              Int      @id @default(1)
+  year            String   @unique // YYYY
   counter         Int      @default(0)
 }
 

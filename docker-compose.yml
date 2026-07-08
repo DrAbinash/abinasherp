@@ -13,6 +13,8 @@ services:
     volumes:
       # Persistent SQLite database — survives container updates
       - care-erp-data:/app/data
+      # Persistent uploaded files (expense bills, bank statements)
+      - care-erp-uploads:/app/uploads
       # Optional: mount a custom .env file for production settings
       - ./env:/app/.env:ro
     environment:
@@ -38,4 +40,6 @@ services:
 
 volumes:
   care-erp-data:
+    driver: local
+  care-erp-uploads:
     driver: local

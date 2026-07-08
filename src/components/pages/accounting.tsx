@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useApi } from '@/lib/auth-context'
+import { useApi, useAuth } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { formatCurrency, formatDate, todayIST } from '@/lib/format'
-import { BookOpen, Plus, Wallet, Landmark, TrendingUp, FileSpreadsheet } from 'lucide-react'
+import { BookOpen, Plus, Wallet, Landmark, TrendingUp, FileSpreadsheet, Download } from 'lucide-react'
 
 const ACCOUNT_TYPES = ['cash', 'bank', 'income', 'expense', 'liability', 'asset']
 const TALLY_GROUPS = [
@@ -34,11 +34,44 @@ const VOUCHER_TYPES = [
 
 export function AccountingPage() {
   const [tab, setTab] = useState('vouchers')
+  const { token } = useAuth()
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Accounting</h1>
-        <p className="text-muted-foreground text-sm mt-1">Tally-compatible chart of accounts, vouchers, ledgers, P&amp;L and Balance Sheet</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Accounting</h1>
+          <p className="text-muted-foreground text-sm mt-1">Tally-compatible chart of accounts, vouchers, ledgers, P&amp;L and Balance Sheet</p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open(`/api/accounting/export/tally-erp9`, '_blank')}
+            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+          >
+            <Download className="w-4 h-4 mr-1" /> Tally ERP 9
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // Fetch with auth header (browsers block custom headers on window.open)
+              fetch('/api/accounting/export/tally-prime', { headers: { Authorization: `Bearer ${token}` } })
+                .then((r) => r.blob())
+                .then((b) => {
+                  const url = URL.createObjectURL(b)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `care-erp-tally-prime.xml`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                })
+            }}
+            className="border-violet-300 text-violet-700 hover:bg-violet-50"
+          >
+            <Download className="w-4 h-4 mr-1" /> Tally Prime
+          </Button>
+        </div>
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">

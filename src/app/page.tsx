@@ -12,6 +12,10 @@ import {
   ReferralsPage, CommissionPage, DoctorLedgerPage, StaffPage, UsersPage,
   RolePermissionsPage, ClinicPage, AuditLogsPage, DayClosePage,
 } from '@/components/pages/management'
+import { SuppliersPage } from '@/components/pages/suppliers'
+import { ExpenseBillsPage } from '@/components/pages/expense-bills'
+import { FormFPage } from '@/components/pages/form-f'
+import { GstReportsPage, GlobalSearch } from '@/components/pages/extras'
 import { Button } from '@/components/ui/button'
 import { Database, Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/auth-context'
@@ -42,6 +46,7 @@ function Shell() {
       <main className="flex-1 min-w-0 flex flex-col">
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3 lg:px-6">
           <MobileMenuButton onClick={() => setSidebarOpen(true)} />
+          <GlobalSearch onNavigate={setPage} />
           <div className="flex-1" />
           <SeedButton />
         </header>
@@ -112,6 +117,10 @@ function PageRouter({ page }: { page: PageKey }) {
     case 'clinic': return <ClinicPage />
     case 'audit-logs': return <AuditLogsPage />
     case 'day-close': return <DayClosePage />
+    case 'expense-bills': return <ExpenseBillsPage />
+    case 'suppliers': return <SuppliersPage />
+    case 'form-f': return <FormFPage />
+    case 'gst-reports': return <GstReportsPage />
     default: return <DashboardPage />
   }
 }

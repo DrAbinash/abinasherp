@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Receipt, Wallet, Landmark, Users, UserCog,
   Stethoscope, Percent, Settings, LogOut, ChevronDown, Activity,
   FileText, Banknote, BookOpen, ShieldCheck, ScrollText, Menu, X,
+  ScanLine, Building2, FileBarChart, Search, FileCheck2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -16,7 +17,7 @@ export type PageKey =
   | 'dashboard' | 'billing' | 'payments' | 'accounting' | 'expenses'
   | 'banking' | 'referrals' | 'commission' | 'doctor-ledger'
   | 'staff' | 'users' | 'role-permissions' | 'clinic' | 'audit-logs'
-  | 'day-close'
+  | 'day-close' | 'expense-bills' | 'suppliers' | 'form-f' | 'gst-reports'
 
 interface NavItem {
   key: PageKey
@@ -31,6 +32,8 @@ const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Operations' },
   { key: 'billing', label: 'Billing', icon: Receipt, group: 'Operations', permission: '/billing' },
   { key: 'payments', label: 'Payments', icon: Banknote, group: 'Operations', permission: '/payments' },
+  { key: 'expense-bills', label: 'Bill Scanning (OCR)', icon: ScanLine, group: 'Operations', permission: '/expenses' },
+  { key: 'form-f', label: 'Form F (PCPNDT)', icon: FileCheck2, group: 'Operations' },
   { key: 'day-close', label: 'Day Close', icon: ScrollText, group: 'Operations', permission: '/day-close' },
 
   { key: 'accounting', label: 'Accounting', icon: BookOpen, group: 'Finance', permission: '/accounting' },
@@ -38,8 +41,10 @@ const NAV: NavItem[] = [
   { key: 'banking', label: 'Banking', icon: Landmark, group: 'Finance', permission: '/banking' },
   { key: 'commission', label: 'Commission Report', icon: Percent, group: 'Finance', superAdminOnly: true },
   { key: 'doctor-ledger', label: 'Doctor Ledger', icon: FileText, group: 'Finance', superAdminOnly: true },
+  { key: 'gst-reports', label: 'GST Reports', icon: FileBarChart, group: 'Finance', superAdminOnly: true },
 
   { key: 'referrals', label: 'Referral Doctors', icon: Stethoscope, group: 'People', permission: '/doctors' },
+  { key: 'suppliers', label: 'Suppliers', icon: Building2, group: 'People', permission: '/expenses' },
   { key: 'staff', label: 'Staff', icon: Users, group: 'People', permission: '/staff' },
   { key: 'users', label: 'Users & Roles', icon: UserCog, group: 'People', superAdminOnly: true },
 

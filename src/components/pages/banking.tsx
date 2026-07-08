@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { formatCurrency, formatDateTime, formatDate } from '@/lib/format'
-import { Landmark, Plus, RefreshCw, AlertTriangle, Check, X } from 'lucide-react'
+import { Landmark, Plus, RefreshCw, AlertTriangle, Check, X, Upload } from 'lucide-react'
 
 export function BankingPage() {
   const [tab, setTab] = useState('accounts')
@@ -21,18 +21,20 @@ export function BankingPage() {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Banking</h1>
-        <p className="text-muted-foreground text-sm mt-1">Bank accounts, transactions, reconciliation, refunds, fraud alerts</p>
+        <p className="text-muted-foreground text-sm mt-1">Bank accounts, transactions, statement upload (CSV/PDF), reconciliation, refunds, fraud alerts</p>
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="accounts">Bank Accounts</TabsTrigger>
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
+          <TabsTrigger value="statements">Upload Statement</TabsTrigger>
           <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
           <TabsTrigger value="refunds">Refunds</TabsTrigger>
           <TabsTrigger value="fraud">Fraud Alerts</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts"><AccountsTab /></TabsContent>
         <TabsContent value="transactions"><TransactionsTab /></TabsContent>
+        <TabsContent value="statements"><StatementsTab /></TabsContent>
         <TabsContent value="reconciliation"><ReconciliationTab /></TabsContent>
         <TabsContent value="refunds"><RefundsTab /></TabsContent>
         <TabsContent value="fraud"><FraudTab /></TabsContent>
@@ -526,5 +528,167 @@ function FraudTab() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function StatementsTab() {
+  const api = useApi()
+  const [accounts, setAccounts] = useState<any[]>([])
+  const [bankAccountId, setBankAccountId] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [preview, setPreview] = useState<any>(null)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [runReconciliation, setRunReconciliation] = useState(true)
+
+  useEffect(() => {
+    api.get('/api/banking/accounts').then((d) => {
+      setAccounts(d.accounts || [])
+      if (d.accounts?.[0]) setBankAccountId(d.accounts[0].id)
+    }).catch(() => {})
+  }, [])
+
+  const handleFile = async (file: File) => {
+    if (!bankAccountId) { toast.error('Select a bank account first'); return }
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('bankAccountId', bankAccountId)
+      const token = localStorage.getItem('care_erp_token') || ''
+      const res = await fetch('/api/banking/statements/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      setPreview(data)
+      toast.success(`Extracted ${data.transactionCount} transactions`)
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const confirmImport = async () => {
+    setImporting(true)
+    try {
+      const token = localStorage.getItem('care_erp_token') || ''
+      const res = await fetch('/api/banking/statements/upload', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          bankAccountId,
+          transactions: preview.transactions,
+          runReconciliation,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Import failed')
+      toast.success(`Imported ${data.inserted} transactions (${data.skipped} duplicates skipped)`)
+      if (data.reconciliation) {
+        toast.info(`Auto-reconciled ${data.reconciliation.matched} of ${data.reconciliation.matched + data.reconciliation.unmatched} transactions`)
+      }
+      setPreview(null)
+      if (fileRef.current) fileRef.current.value = ''
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload Bank Statement</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <Label>Bank Account</Label>
+              <Select value={bankAccountId} onValueChange={setBankAccountId}>
+                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.bankName} ({a.maskedAccountNumber})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => fileRef.current?.click()} className="bg-brand-gradient text-white">
+              <Upload className="w-4 h-4 mr-1" /> {uploading ? 'Parsing...' : 'Select File'}
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv,application/pdf"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+            />
+          </div>
+          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
+            <p className="font-semibold mb-1">Supported formats:</p>
+            <ul className="list-disc list-inside text-xs space-y-1">
+              <li><strong>CSV</strong> — Most bank statement downloads (HDFC, ICICI, SBI, Axis, etc.)</li>
+              <li><strong>PDF</strong> — Text-based PDFs (extracted via LLM); scanned PDFs not supported</li>
+            </ul>
+            <p className="text-xs mt-2">Auto-detects column headers (Date, Narration, Debit, Credit, Balance, UTR/Ref)</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {preview && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between flex-wrap gap-2">
+            <div>
+              <CardTitle>Preview — {preview.transactionCount} transactions</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Credits: {formatCurrency(preview.summary.totalCredits)} · Debits: {formatCurrency(preview.summary.totalDebits)} · Net: {formatCurrency(preview.summary.netFlow)}
+              </p>
+            </div>
+            <div className="flex gap-2 items-end">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={runReconciliation} onChange={(e) => setRunReconciliation(e.target.checked)} />
+                Run auto-reconciliation
+              </label>
+              <Button variant="ghost" size="sm" onClick={() => { setPreview(null); if (fileRef.current) fileRef.current.value = '' }}>Cancel</Button>
+              <Button onClick={confirmImport} disabled={importing} className="bg-brand-gradient text-white">
+                {importing ? 'Importing...' : `Import ${preview.transactionCount} transactions`}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[500px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>UTR/Ref</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Type</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {preview.transactions.map((t: any, i: number) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-xs">{t.transactionDate}</TableCell>
+                      <TableCell className="text-sm">{t.description}</TableCell>
+                      <TableCell className="text-xs font-mono">{t.utr || t.referenceNumber || '—'}</TableCell>
+                      <TableCell className={`text-right font-medium ${t.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {t.type === 'credit' ? '+' : '−'}{formatCurrency(t.amount)}
+                      </TableCell>
+                      <TableCell><Badge variant="outline" className={t.type === 'credit' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}>{t.type}</Badge></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }

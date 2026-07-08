@@ -45,8 +45,8 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data
+# Create data directory for SQLite + uploads
+RUN mkdir -p /app/data /app/uploads/expense-bills /app/uploads/bank-statements
 
 # Expose port
 EXPOSE 3000
