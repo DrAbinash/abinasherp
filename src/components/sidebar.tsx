@@ -8,7 +8,7 @@ import {
   Stethoscope, Percent, Settings, LogOut, ChevronDown, Activity,
   FileText, Banknote, BookOpen, ShieldCheck, ScrollText, Menu, X,
   ScanLine, Building2, FileBarChart, Search, FileCheck2,
-  FlaskConical, Calendar, Package, MessageSquare, Network,
+  FlaskConical, Calendar, Package, MessageSquare, Network, Mail, Globe,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -20,6 +20,7 @@ export type PageKey =
   | 'staff' | 'users' | 'role-permissions' | 'clinic' | 'audit-logs'
   | 'day-close' | 'expense-bills' | 'suppliers' | 'form-f' | 'gst-reports'
   | 'reports' | 'packages' | 'inventory' | 'appointments' | 'notifications' | 'branches'
+  | 'email-settings' | 'online-bookings'
 
 interface NavItem {
   key: PageKey
@@ -56,6 +57,8 @@ const NAV: NavItem[] = [
   { key: 'notifications', label: 'Notifications', icon: MessageSquare, group: 'People', superAdminOnly: true },
 
   { key: 'clinic', label: 'Clinic Settings', icon: Settings, group: 'Admin' },
+  { key: 'email-settings', label: 'Email & SMTP', icon: Mail, group: 'Admin', superAdminOnly: true },
+  { key: 'online-bookings', label: 'Online Bookings', icon: Globe, group: 'Admin', superAdminOnly: true },
   { key: 'branches', label: 'Branches', icon: Network, group: 'Admin', superAdminOnly: true },
   { key: 'role-permissions', label: 'Role Permissions', icon: ShieldCheck, group: 'Admin', superAdminOnly: true },
   { key: 'audit-logs', label: 'Audit Logs', icon: ScrollText, group: 'Admin', superAdminOnly: true },

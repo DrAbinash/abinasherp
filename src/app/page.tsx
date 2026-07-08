@@ -16,6 +16,8 @@ import { SuppliersPage } from '@/components/pages/suppliers'
 import { ExpenseBillsPage } from '@/components/pages/expense-bills'
 import { FormFPage } from '@/components/pages/form-f'
 import { GstReportsPage, GlobalSearch } from '@/components/pages/extras'
+import { InventoryPage } from '@/components/pages/inventory'
+import { EmailSettingsPage, OnlineBookingsPage } from '@/components/pages/admin-pages'
 import { Button } from '@/components/ui/button'
 import { Database, Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/auth-context'
@@ -121,6 +123,9 @@ function PageRouter({ page }: { page: PageKey }) {
     case 'suppliers': return <SuppliersPage />
     case 'form-f': return <FormFPage />
     case 'gst-reports': return <GstReportsPage />
+    case 'inventory': return <InventoryPage />
+    case 'email-settings': return <EmailSettingsPage />
+    case 'online-bookings': return <OnlineBookingsPage />
     default: return <DashboardPage />
   }
 }

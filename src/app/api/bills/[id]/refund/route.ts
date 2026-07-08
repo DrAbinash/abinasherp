@@ -84,5 +84,20 @@ export async function POST(
     console.error('Refund auto-voucher failed:', e)
   }
 
+  // Fire-and-forget email notification (non-blocking)
+  try {
+    const { sendBillEditEmail } = await import('@/lib/email')
+    sendBillEditEmail({
+      billNumber: bill.billNumber,
+      patientName: (await db.patient.findUnique({ where: { id: bill.patientId } }))?.name || 'Unknown',
+      changeType: 'refund',
+      oldValue: `paid=₹${bill.paidAmount.toFixed(2)}, refunded=₹${bill.refundAmount.toFixed(2)}`,
+      newValue: `refund=₹${refundAmt.toFixed(2)} via ${method || 'cash'}; paid=₹${newPaidAmount.toFixed(2)}, refunded=₹${newRefundAmount.toFixed(2)}`,
+      reason: `[REFUND] ${notes || 'No reason provided'}`,
+      actor: session.name,
+      totalAmount: bill.totalAmount,
+    }).catch((e) => console.error('Refund email failed:', e))
+  } catch (e) { /* ignore */ }
+
   return NextResponse.json({ bill: updated, payment })
 }

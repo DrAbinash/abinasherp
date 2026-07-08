@@ -31,6 +31,14 @@ services:
       # Session timeouts
       - NEXTAUTH_URL=http://your-synology-ip:3000
       - NEXTAUTH_SECRET=please-change-this-to-a-random-32-char-string
+      # ============================================================
+      # ICICI Orange Pay (online booking payments)
+      # ⚠️ PUBLIC_BASE_URL host MUST be whitelisted in ICICI merchant dashboard
+      # ============================================================
+      - ICICI_MERCHANT_ID=${ICICI_MERCHANT_ID:-}
+      - ICICI_AGGREGATOR_ID=${ICICI_AGGREGATOR_ID:-}
+      - ICICI_SECRET_KEY=${ICICI_SECRET_KEY:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:3000}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s

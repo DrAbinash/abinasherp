@@ -16,7 +16,7 @@ export async function POST(
 
   const bill = await db.bill.findUnique({
     where: { id },
-    include: { order: { include: { orderTests: true } } },
+    include: { patient: true, order: { include: { orderTests: true } } },
   })
   if (!bill) return NextResponse.json({ error: 'Bill not found' }, { status: 404 })
   if (bill.status === 'cancelled') {
@@ -88,6 +88,21 @@ export async function POST(
     where: { id: bill.orderId },
     data: { status: 'pending' },
   })
+
+  // Fire-and-forget email notification to admin (non-blocking)
+  try {
+    const { sendBillEditEmail } = await import('@/lib/email')
+    sendBillEditEmail({
+      billNumber: bill.billNumber,
+      patientName: bill.patient?.name || 'Unknown',
+      changeType: 'cancelled',
+      oldValue: bill.status,
+      newValue: 'cancelled',
+      reason: `[CANCELLED] ${reason || 'No reason provided'}`,
+      actor: session.name,
+      totalAmount: bill.totalAmount,
+    }).catch((e) => console.error('Cancel email failed:', e))
+  } catch (e) { /* ignore */ }
 
   return NextResponse.json({ bill: updated })
 }

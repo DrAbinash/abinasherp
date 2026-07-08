@@ -1061,53 +1061,198 @@ model PackageCounter {
 }
 
 // ============================================================
-// INVENTORY (reagents + consumables)
+// INVENTORY (reagents + consumables) — matches reference repo schema
 // ============================================================
 model InventoryItem {
   id              String   @id @default(cuid())
   itemId          String   @unique // INV-####
   name            String
-  category        String   @default("reagent") // reagent | consumable | equipment
   unit            String   @default("unit") // ml | vial | box | unit | gm
+  category        String   @default("consumable") // reagent | consumable | equipment (free-text)
   currentStock    Float    @default(0)
-  minStock        Float    @default(0)
-  maxStock        Float    @default(0)
-  reorderLevel    Float    @default(0)
-  costPerUnit     Float    @default(0)
-  supplierId      String?
-  expiryDate      String?
-  batchNumber     String?
-  storageLocation String?
-  notes           String?
+  minStock        Float    @default(0) // low-stock threshold
+  costPrice       Float    @default(0) // per-unit cost
+  preferredVendorId String? // links to Supplier
   isActive        Boolean  @default(true)
   lastUpdatedById String?
   lastUpdatedByName String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  transactions    InventoryTransaction[]
+  consumptionRules InventoryConsumptionRule[]
+
   @@index([name])
   @@index([category])
+  @@index([preferredVendorId])
 }
 
-model InventoryMovement {
+// Append-only stock ledger — each row is one movement with stockBefore/stockAfter snapshot
+model InventoryTransaction {
   id              String   @id @default(cuid())
   itemId          String
-  movementType    String   // in | out | adjust | expired
-  quantity        Float    // positive for in, negative for out
-  reason          String?  // e.g. "Used for CBC test", "Expired"
-  referenceBillId String?
-  referenceExpenseBillId String?
-  performedById   String?
-  performedByName String?
+  type            String   // "in" | "out" | "adjustment"
+  quantity        Float    // signed: positive for in, negative for out (delta = stockAfter - stockBefore)
+  stockBefore     Float
+  stockAfter      Float
+  reason          String?
+  reference       String?  // e.g. "ORD-2024-0001"
+  performedBy     String?
+  vendorId        String?  // for stock-in purchases
+  invoiceNumber   String?
+  invoiceDate     String?  // YYYY-MM-DD
+  unitCost        Float?
   createdAt       DateTime @default(now())
+
+  item            InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([itemId])
   @@index([createdAt])
+  @@index([vendorId])
+}
+
+// Maps test → inventory items consumed per test (for future auto-deduction)
+model InventoryConsumptionRule {
+  id              String   @id @default(cuid())
+  testId          String
+  itemId          String
+  quantity        Float    @default(1)
+  createdAt       DateTime @default(now())
+
+  item            InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([testId])
+  @@index([itemId])
 }
 
 model InventoryCounter {
   id              Int      @id @default(1)
   counter         Int      @default(0)
+}
+
+// ============================================================
+// EMAIL (SMTP settings + send log)
+// ============================================================
+model EmailSettings {
+  id              Int      @id @default(1)
+  smtpHost        String   @default("")
+  smtpPort        String   @default("587")
+  smtpUser        String   @default("")
+  smtpPassword    String   @default("")
+  smtpSecure      Boolean  @default(false)
+  fromAddress     String   @default("")
+  fromName        String   @default("Care Diagnostics ERP")
+  adminEmail      String   @default("")
+  extraRecipients String   @default("[]") // JSON array
+  billEditEnabled Boolean  @default(true)
+  dailySummaryEnabled Boolean @default(true)
+  dailySummaryTime String  @default("17:00")
+  updatedAt       DateTime @updatedAt
+}
+
+// Append-only log of every email send attempt
+model EmailLog {
+  id              String   @id @default(cuid())
+  to              String   // comma-separated recipients
+  subject         String
+  body            String   // HTML body
+  templateName    String   // bill_edit | bill_reprint | daily_summary | commission_month_end | alert
+  billId          String?
+  reportId        String?
+  status          String   @default("queued") // queued | sent | failed
+  errorMessage    String?
+  messageId       String?  // SMTP message-id
+  attempts        Int      @default(0)
+  sentById        String?
+  sentByName      String?
+  sentAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([status])
+  @@index([billId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// ICICI ORANGE PAY (online booking + payment gateway)
+// ============================================================
+model OnlineBooking {
+  id              String   @id @default(cuid())
+  bookingRef      String   @unique // OB-YYYYMMDD-####
+  patientName     String
+  patientPhone    String
+  patientEmail    String?
+  patientAge      Int?
+  patientGender   String?
+  packageId       String?
+  packageName     String?
+  testIds         String?  // JSON array
+  testNames       String?  // JSON array of names
+  appointmentDate String   // YYYY-MM-DD
+  timeSlot        String   // HH:MM
+  amount          Float
+  status          String   @default("pending") // pending | payment_initiated | paid | confirmed | cancelled | failed | refunded
+  paymentMethod   String?  // upi | card | netbanking
+  iciciTransactionId String? // gateway's txnID
+  iciciMerchantTxnNo String? // our bookingRef sent to ICICI
+  iciciResponseCode String?
+  iciciResponseMsg String?
+  paymentInitiatedAt DateTime?
+  paymentCompletedAt DateTime?
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  ip              String?
+  userAgent       String?
+  billId          String?  // once bill is created on confirmation
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([patientPhone])
+  @@index([appointmentDate])
+  @@index([iciciMerchantTxnNo])
+}
+
+// Payment gateway diagnostics — append-only observability (safe to prune)
+model PaymentGatewayDiagnostic {
+  id              String   @id @default(cuid())
+  gateway         String   @default("icici")
+  stage           String   // initiate | callback | status_check | refund
+  merchantTxnNo   String?
+  bookingRef      String?
+  success         Boolean  @default(false)
+  httpStatus      Int?
+  responseCode    String?
+  responseMessage String?
+  requestUrl      String?
+  requestPayload  String?  // JSON (secrets masked)
+  responseBody    String?
+  redirectUri     String?
+  tranCtx         String?
+  secureHashMasked String?
+  amount          Float?
+  currency        String?
+  merchantId      String?
+  aggregatorId    String?
+  returnUrl       String?
+  callbackUrl     String?
+  publicBaseUrl   String?
+  clientIp        String?
+  forwardedFor    String?
+  userAgent       String?
+  referer         String?
+  origin          String?
+  environment     String?
+  durationMs      Int?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  @@index([gateway])
+  @@index([stage])
+  @@index([success])
+  @@index([merchantTxnNo])
+  @@index([createdAt])
 }
 
 // ============================================================

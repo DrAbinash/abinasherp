@@ -9,7 +9,6 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const q = searchParams.get('q') || ''
   const category = searchParams.get('category') || ''
-  const lowStock = searchParams.get('lowStock')
 
   const where: Record<string, unknown> = { isActive: true }
   if (q) where.name = { contains: q }
@@ -18,22 +17,28 @@ export async function GET(req: NextRequest) {
   const items = await db.inventoryItem.findMany({
     where,
     orderBy: { name: 'asc' },
+    include: { _count: { select: { transactions: true, consumptionRules: true } } },
   })
 
-  // Filter for low stock if requested
-  let filtered = items
-  if (lowStock === 'true') {
-    filtered = items.filter((i) => i.currentStock <= i.reorderLevel)
-  }
+  // Hydrate preferredVendorId to supplier name
+  const supplierIds = Array.from(new Set(items.map((i) => i.preferredVendorId).filter(Boolean))) as string[]
+  const suppliers = await db.supplier.findMany({ where: { id: { in: supplierIds } }, select: { id: true, name: true } })
+  const supplierMap = new Map(suppliers.map((s) => [s.id, s.name]))
+
+  const itemsWithVendor = items.map((i) => ({
+    ...i,
+    preferredVendorName: i.preferredVendorId ? supplierMap.get(i.preferredVendorId) : null,
+    stockStatus: i.currentStock <= 0 ? 'Out of Stock' : i.currentStock <= i.minStock ? 'Low Stock' : 'In Stock',
+  }))
+
+  // Summary
+  const totalStockValue = items.reduce((s, i) => s + i.currentStock * i.costPrice, 0)
+  const outOfStockCount = items.filter((i) => i.currentStock <= 0).length
+  const lowStockCount = items.filter((i) => i.currentStock > 0 && i.currentStock <= i.minStock).length
 
   return NextResponse.json({
-    items: filtered,
-    summary: {
-      totalItems: items.length,
-      lowStockCount: items.filter((i) => i.currentStock <= i.reorderLevel).length,
-      outOfStockCount: items.filter((i) => i.currentStock <= 0).length,
-      totalValue: items.reduce((s, i) => s + i.currentStock * i.costPerUnit, 0),
-    },
+    items: itemsWithVendor,
+    summary: { totalItems: items.length, totalStockValue, outOfStockCount, lowStockCount },
   })
 }
 
@@ -42,8 +47,8 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const { name, category, unit, currentStock, minStock, maxStock, reorderLevel, costPerUnit, supplierId, expiryDate, batchNumber, storageLocation, notes } = body
-  if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
+  const { name, unit, category, currentStock, minStock, costPrice, preferredVendorId } = body
+  if (!name || !unit) return NextResponse.json({ error: 'name and unit required' }, { status: 400 })
 
   const counter = await db.inventoryCounter.upsert({
     where: { id: 1 },
@@ -52,40 +57,40 @@ export async function POST(req: NextRequest) {
   })
   const itemId = `INV-${String(counter.counter).padStart(4, '0')}`
 
-  const item = await db.inventoryItem.create({
-    data: {
-      itemId,
-      name,
-      category: category || 'reagent',
-      unit: unit || 'unit',
-      currentStock: parseFloat(currentStock || '0'),
-      minStock: parseFloat(minStock || '0'),
-      maxStock: parseFloat(maxStock || '0'),
-      reorderLevel: parseFloat(reorderLevel || '0'),
-      costPerUnit: parseFloat(costPerUnit || '0'),
-      supplierId: supplierId || null,
-      expiryDate,
-      batchNumber,
-      storageLocation,
-      notes,
-      lastUpdatedById: session.id,
-      lastUpdatedByName: session.name,
-    },
-  })
+  const initialStock = parseFloat(currentStock || '0')
 
-  // Record initial movement if stock > 0
-  if (item.currentStock > 0) {
-    await db.inventoryMovement.create({
+  // Transactional: create item + initial stock-in transaction
+  const item = await db.$transaction(async (tx) => {
+    const newItem = await tx.inventoryItem.create({
       data: {
-        itemId: item.id,
-        movementType: 'in',
-        quantity: item.currentStock,
-        reason: 'Initial stock',
-        performedById: session.id,
-        performedByName: session.name,
+        itemId,
+        name,
+        unit,
+        category: category || 'consumable',
+        currentStock: initialStock,
+        minStock: parseFloat(minStock || '0'),
+        costPrice: parseFloat(costPrice || '0'),
+        preferredVendorId: preferredVendorId || null,
+        lastUpdatedById: session.id,
+        lastUpdatedByName: session.name,
       },
     })
-  }
+
+    if (initialStock > 0) {
+      await tx.inventoryTransaction.create({
+        data: {
+          itemId: newItem.id,
+          type: 'in',
+          quantity: initialStock,
+          stockBefore: 0,
+          stockAfter: initialStock,
+          reason: 'Initial stock',
+          performedBy: session.name,
+        },
+      })
+    }
+    return newItem
+  })
 
   return NextResponse.json({ item })
 }

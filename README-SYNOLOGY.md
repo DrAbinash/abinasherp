@@ -437,3 +437,138 @@ src/components/pages/extras.tsx                # GlobalSearch + GstReports
 8. **OCR confidence scoring**: Each scan returns a confidence score; bills with < 80% confidence are flagged for manual review.
 9. **Idempotent expense-bill posting**: A bill can only be posted once; subsequent attempts return 400 with a clear error message.
 10. **Keyboard-navigable global search**: Arrow keys + Enter + Esc — power-user friendly.
+
+---
+
+## 🆕 New Features Added (V3)
+
+### Inventory Management (rebuilt from reference repo)
+- **Location**: People → Inventory
+- **Schema**: Matches reference repo exactly — `InventoryItem` (name, unit, category, currentStock, minStock, costPrice, preferredVendorId) + `InventoryTransaction` (append-only ledger with stockBefore/stockAfter snapshots, type in/out/adjustment, vendorId, invoiceNumber, invoiceDate, unitCost)
+- **Endpoints**:
+  - `GET/POST /api/inventory` — list/create items
+  - `GET /api/inventory/low-stock` — items where currentStock < minStock
+  - `POST /api/inventory/:id/stock-in` — atomic transactional stock-in (with vendor + invoice details)
+  - `POST /api/inventory/:id/stock-out` — with insufficient-stock guard (no negative stock)
+  - `POST /api/inventory/:id/adjust` — absolute target (delta computed)
+  - `GET /api/inventory/:id/history` — append-only ledger with vendor names hydrated
+  - `GET/POST /api/inventory/consumption-rules` — map tests to consumed items
+  - `PUT/DELETE /api/inventory/consumption-rules/by-test/:testId` — atomic replace or clear
+- **UI**: Items tab (summary cards: total value, low stock, out of stock), Low Stock tab, Consumption Rules tab. Each item has Movement dialog (3 modes: in/out/adjust) + History dialog showing full ledger.
+- **Low-stock alerts**: Computed on every stock-out — if currentStock ≤ minStock, alert returned in API response.
+
+### Bill Audit + Email Notifications (matches reference repo)
+- **Every bill mutation now creates a `BillAudit` row** with changeType, oldValue, newValue, performedByName, reason:
+  - `PUT /api/bills/:id/edit` — discount/status changes. Required: `reason` ≥3 chars. Advisory `discount_override_warning` if discount >50% of subtotal.
+  - `POST /api/bills/:id/cancel` — changeType `cancelled` + `tests_cancelled_cascade` + `refund` (if autoRefund)
+  - `POST /api/bills/:id/refund` — changeType `refund` with old/new paid+refunded amounts
+  - `POST /api/bills/:id/reprint-log` — changeType `reprint` with monotonic `reprint #N` sequence
+  - `GET /api/bills/:id/audits` — full audit trail
+- **Auto-email on every mutation**: Admin → Email & SMTP → toggle `billEditEnabled`. Email fires asynchronously (non-blocking) via nodemailer. Includes HTML table with before/after values, reason, actor, timestamp. Logs every send to `EmailLog` table (status queued/sent/failed, errorMessage, messageId).
+- **Email templates**: `bill_edit` (subject `[Bill Edit] <billNumber> — <patientName>`), `bill_reprint` (subject `[Bill Re-print] ...`), `daily_summary`, `test`.
+
+### Public Online Booking Webpage with ICICI Orange Pay
+- **URL**: `https://your-domain/booking` (public, no login required)
+- **3-step booking flow**:
+  1. Select package or individual tests (shows price + fasting warnings)
+  2. Patient details + appointment date + time slot (morning/afternoon/evening)
+  3. Review → Pay (redirects to ICICI Orange Pay)
+- **ICICI Orange Pay integration** (verbatim field names from reference repo — DO NOT modify):
+  - `POST /api/public/booking/initiate` — creates `OnlineBooking` record, calls ICICI `initiateSale`, returns `redirectUrl`
+  - `GET /api/public/booking/icici-callback` — browser return URL (renders success/failure page)
+  - `POST /api/gateway/icici-webhook` — server-to-server webhook with **MANDATORY** HMAC-SHA256 signature verification
+  - `GET /api/public/booking/status/:bookingRef` — polling endpoint for booking status
+- **Field-name casing preserved exactly** (ICICI spec-mandated):
+  - `merchantId`, `aggregatorID`, `merchantTxnNo`, `customerEmailID`, `customerMobileNo`, `customerName`, `returnURL`, `addlParam1`, `addlParam2`, `txnDate`, `secureHash`
+- **Hard-coded literals** (must be verbatim):
+  - `currencyCode: "356"` (INR ISO-4217)
+  - `payType: "0"`
+  - `transactionType: "SALE"` / `"STATUS"` / `"REFUND"`
+  - `addlParam2: "care-diagnostics"` (tenant tag)
+  - Success codes: `R1000` (initiate), `SUC`/`0000`/`000` (status/webhook)
+- **Secure hash algorithm**: HMAC-SHA256 over alphabetically-sorted parameter values concatenated with NO separator.
+- **Payment Gateway Diagnostics**: Every initiate/callback/webhook attempt logged to `PaymentGatewayDiagnostic` table (append-only) with full request/response, masked secureHash, IP, user-agent, environment, duration — for compliance debugging.
+- **If ICICI not configured**: Booking still created with `paymentRequired: false` — patient pays at centre. Useful for testing the flow without ICICI credentials.
+
+### Email & SMTP Settings Page
+- **Location**: Admin → Email & SMTP (super-admin only)
+- Configure SMTP host/port/user/password/secure, from-name/address, admin email, extra recipients (JSON array)
+- Toggles: `billEditEnabled` (email on bill mutations), `dailySummaryEnabled` (daily collection summary)
+- "Send Test Email" button
+- Email Logs tab — last 50 sends with status, error, message-id
+
+### Online Bookings Admin Page
+- **Location**: Admin → Online Bookings (super-admin only)
+- Shows public booking URL (copy-to-clipboard)
+- Shows ICICI env var configuration guide
+- Shows webhook URL to register in ICICI merchant dashboard
+- Lists recent online bookings (when populated)
+
+## 🔌 New API Endpoints in V3
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET/POST | `/api/inventory` | List / create items |
+| GET | `/api/inventory/low-stock` | Items below min stock |
+| POST | `/api/inventory/:id/stock-in` | Atomic stock-in (with vendor + invoice) |
+| POST | `/api/inventory/:id/stock-out` | Stock-out (insufficient guard) |
+| POST | `/api/inventory/:id/adjust` | Absolute-target adjustment |
+| GET | `/api/inventory/:id/history` | Append-only stock ledger |
+| GET/POST | `/api/inventory/consumption-rules` | List / add consumption rules |
+| PUT/DELETE | `/api/inventory/consumption-rules/by-test/:testId` | Atomic replace or clear |
+| DELETE | `/api/inventory/consumption-rules/:id` | Single delete |
+| PUT | `/api/bills/:id/edit` | Edit bill (audit + email) |
+| POST | `/api/bills/:id/reprint-log` | Log reprint (audit + email) |
+| GET | `/api/bills/:id/audits` | Full audit trail |
+| POST | `/api/public/booking/initiate` | Create booking + ICICI initiateSale |
+| GET | `/api/public/booking/icici-callback` | Browser return URL |
+| POST | `/api/gateway/icici-webhook` | Server webhook (HMAC verified) |
+| GET | `/api/public/booking/status/:bookingRef` | Booking status (polling) |
+| GET | `/api/public/booking/packages` | Public package list |
+| GET | `/api/public/booking/tests` | Public test list |
+| GET | `/api/public/booking/slots` | Available time slots |
+| GET/PUT | `/api/email-settings` | SMTP config |
+| GET | `/api/email-logs` | Email send log |
+
+## 🔒 ICICI Orange Pay Compliance Checklist
+
+Before going live with online payments:
+
+1. **Register your domain** in ICICI merchant dashboard:
+   - `returnURL` whitelist: add `https://your-domain.com/api/public/booking/icici-callback`
+   - Webhook URL: add `https://your-domain.com/api/gateway/icici-webhook`
+2. **Set env vars** in your `env` file:
+   ```
+   ICICI_MERCHANT_ID=your-merchant-id
+   ICICI_AGGREGATOR_ID=your-aggregator-id
+   ICICI_SECRET_KEY=your-hmac-secret
+   PUBLIC_BASE_URL=https://your-domain.com
+   ```
+3. **Test in UAT first**: Leave `ICICI_BASE_URL` unset — defaults to `https://pgpayuat.icicibank.com`. Test with ICICI-provided test cards.
+4. **Verify webhook signature**: The webhook endpoint MANDATORY-verifies HMAC. If `ICICI_SECRET_KEY` is missing or signature mismatches, the webhook is rejected. Do NOT make verification conditional (was a forge-payment CVE in the reference repo).
+5. **Switch to production**: Once UAT passes, set `NODE_ENV=production` (which auto-switches base URL to `https://pgpay.icicibank.com`).
+6. **Monitor diagnostics**: Check Admin → Online Bookings → (diagnostics table) for any failed initiate/callback attempts. The `PaymentGatewayDiagnostic` table is append-only — safe to prune old rows.
+
+## 📁 New Files in V3
+
+```
+prisma/schema.prisma                          # Added: InventoryTransaction (with stockBefore/After), InventoryConsumptionRule, EmailSettings, EmailLog, OnlineBooking, PaymentGatewayDiagnostic
+src/lib/email.ts                              # Nodemailer transport + sendBillEditEmail + sendBillReprintEmail + sendDailySummaryEmail
+src/lib/icici.ts                              # ICICI provider: initiateSale, checkStatus, refundPayment, verifyIciciWebhookSignature (HMAC-SHA256), isIciciWebhookSuccess
+src/app/api/inventory/route.ts                # List + create items
+src/app/api/inventory/low-stock/route.ts
+src/app/api/inventory/[id]/{stock-in,stock-out,adjust,history}/route.ts
+src/app/api/inventory/consumption-rules/route.ts
+src/app/api/inventory/consumption-rules/[id]/route.ts
+src/app/api/inventory/consumption-rules/by-test/[testId]/route.ts
+src/app/api/bills/[id]/{edit,reprint-log,audits}/route.ts
+src/app/api/public/booking/{initiate,icici-callback}/route.ts
+src/app/api/public/booking/status/[bookingRef]/route.ts
+src/app/api/public/booking/{packages,tests,slots}/route.ts
+src/app/api/gateway/icici-webhook/route.ts    # S2S webhook (HMAC mandatory)
+src/app/api/email-settings/route.ts
+src/app/api/email-logs/route.ts
+src/app/(public)/booking/{page,layout,booking-app}.tsx  # Public booking webpage
+src/components/pages/inventory.tsx            # Inventory UI (items, low-stock, consumption rules, movement dialog, history dialog)
+src/components/pages/admin-pages.tsx          # EmailSettingsPage + OnlineBookingsPage
+```
