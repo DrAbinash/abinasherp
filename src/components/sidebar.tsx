@@ -8,6 +8,7 @@ import {
   Stethoscope, Percent, Settings, LogOut, ChevronDown, Activity,
   FileText, Banknote, BookOpen, ShieldCheck, ScrollText, Menu, X,
   ScanLine, Building2, FileBarChart, Search, FileCheck2,
+  FlaskConical, Calendar, Package, MessageSquare, Network,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -18,6 +19,7 @@ export type PageKey =
   | 'banking' | 'referrals' | 'commission' | 'doctor-ledger'
   | 'staff' | 'users' | 'role-permissions' | 'clinic' | 'audit-logs'
   | 'day-close' | 'expense-bills' | 'suppliers' | 'form-f' | 'gst-reports'
+  | 'reports' | 'packages' | 'inventory' | 'appointments' | 'notifications' | 'branches'
 
 interface NavItem {
   key: PageKey
@@ -32,6 +34,8 @@ const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Operations' },
   { key: 'billing', label: 'Billing', icon: Receipt, group: 'Operations', permission: '/billing' },
   { key: 'payments', label: 'Payments', icon: Banknote, group: 'Operations', permission: '/payments' },
+  { key: 'appointments', label: 'Appointments', icon: Calendar, group: 'Operations' },
+  { key: 'packages', label: 'Health Packages', icon: Package, group: 'Operations' },
   { key: 'expense-bills', label: 'Bill Scanning (OCR)', icon: ScanLine, group: 'Operations', permission: '/expenses' },
   { key: 'form-f', label: 'Form F (PCPNDT)', icon: FileCheck2, group: 'Operations' },
   { key: 'day-close', label: 'Day Close', icon: ScrollText, group: 'Operations', permission: '/day-close' },
@@ -42,13 +46,17 @@ const NAV: NavItem[] = [
   { key: 'commission', label: 'Commission Report', icon: Percent, group: 'Finance', superAdminOnly: true },
   { key: 'doctor-ledger', label: 'Doctor Ledger', icon: FileText, group: 'Finance', superAdminOnly: true },
   { key: 'gst-reports', label: 'GST Reports', icon: FileBarChart, group: 'Finance', superAdminOnly: true },
+  { key: 'reports', label: 'Lab Reports', icon: FileText, group: 'Finance' },
 
   { key: 'referrals', label: 'Referral Doctors', icon: Stethoscope, group: 'People', permission: '/doctors' },
   { key: 'suppliers', label: 'Suppliers', icon: Building2, group: 'People', permission: '/expenses' },
   { key: 'staff', label: 'Staff', icon: Users, group: 'People', permission: '/staff' },
   { key: 'users', label: 'Users & Roles', icon: UserCog, group: 'People', superAdminOnly: true },
+  { key: 'inventory', label: 'Inventory', icon: FlaskConical, group: 'People' },
+  { key: 'notifications', label: 'Notifications', icon: MessageSquare, group: 'People', superAdminOnly: true },
 
   { key: 'clinic', label: 'Clinic Settings', icon: Settings, group: 'Admin' },
+  { key: 'branches', label: 'Branches', icon: Network, group: 'Admin', superAdminOnly: true },
   { key: 'role-permissions', label: 'Role Permissions', icon: ShieldCheck, group: 'Admin', superAdminOnly: true },
   { key: 'audit-logs', label: 'Audit Logs', icon: ScrollText, group: 'Admin', superAdminOnly: true },
 ]

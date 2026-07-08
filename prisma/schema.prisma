@@ -973,3 +973,219 @@ model StaffCounter {
   id              Int      @id @default(1)
   counter         Int      @default(0)
 }
+
+// ============================================================
+// REPORT TEMPLATES + REPORTS (lab/pathology reports — not financial)
+// ============================================================
+model ReportTemplate {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  testId          String?  // Optional link to Test
+  testName        String
+  category        String   @default("general") // hematology | biochemistry | microbiology | pathology | cardiology | general
+  template        String   // JSON: { fields: [{name, type, unit, refRange, defaultValue}] }
+  defaultValues   String?  // JSON of pre-filled values
+  notes           String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PatientReport {
+  id              String   @id @default(cuid())
+  reportNumber    String   @unique // RPT-YYYYMM-####
+  billId          String?
+  billNumber      String?
+  patientId       String?
+  patientName     String
+  patientAge      Int?
+  patientGender   String?
+  patientPhone    String?
+  doctorName      String?
+  testId          String?
+  testName        String
+  templateId      String?
+  values          String   // JSON: { fieldName: value }
+  notes           String?
+  impression      String?
+  status          String   @default("draft") // draft | pending_review | approved | delivered | cancelled
+  reportedById    String?
+  reportedByName  String?
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  deliveredAt     DateTime?
+  deliveryMethod  String?  // whatsapp | email | portal | print | none
+  deliveryRef     String?  // message ID / email ID
+  pdfPath         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([billId])
+  @@index([patientId])
+  @@index([status])
+}
+
+model PatientReportCounter {
+  id              Int      @id @default(1)
+  yearMonth       String   @unique
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// PACKAGES (Health Check Profiles)
+// ============================================================
+model Package {
+  id              String   @id @default(cuid())
+  packageId       String   @unique // PKG-####
+  name            String
+  description     String?
+  category        String   @default("general") // executive | master | senior | women | child | pre-employment | general
+  totalTests      Int      @default(0)
+  testIds         String   // JSON array of test IDs
+  mrp             Float    @default(0) // Marked price
+  sellingPrice    Float    @default(0) // Discounted price
+  durationHours   Int      @default(2) // Time required
+  fastingRequired Boolean  @default(false)
+  instructions    String?  // Pre-test instructions for patient
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([category])
+}
+
+model PackageCounter {
+  id              Int      @id @default(1)
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// INVENTORY (reagents + consumables)
+// ============================================================
+model InventoryItem {
+  id              String   @id @default(cuid())
+  itemId          String   @unique // INV-####
+  name            String
+  category        String   @default("reagent") // reagent | consumable | equipment
+  unit            String   @default("unit") // ml | vial | box | unit | gm
+  currentStock    Float    @default(0)
+  minStock        Float    @default(0)
+  maxStock        Float    @default(0)
+  reorderLevel    Float    @default(0)
+  costPerUnit     Float    @default(0)
+  supplierId      String?
+  expiryDate      String?
+  batchNumber     String?
+  storageLocation String?
+  notes           String?
+  isActive        Boolean  @default(true)
+  lastUpdatedById String?
+  lastUpdatedByName String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([name])
+  @@index([category])
+}
+
+model InventoryMovement {
+  id              String   @id @default(cuid())
+  itemId          String
+  movementType    String   // in | out | adjust | expired
+  quantity        Float    // positive for in, negative for out
+  reason          String?  // e.g. "Used for CBC test", "Expired"
+  referenceBillId String?
+  referenceExpenseBillId String?
+  performedById   String?
+  performedByName String?
+  createdAt       DateTime @default(now())
+
+  @@index([itemId])
+  @@index([createdAt])
+}
+
+model InventoryCounter {
+  id              Int      @id @default(1)
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// APPOINTMENTS (slot booking)
+// ============================================================
+model Appointment {
+  id              String   @id @default(cuid())
+  appointmentId   String   @unique // APT-YYYYMMDD-####
+  patientId       String?
+  patientName     String
+  patientPhone    String?
+  packageId       String?
+  packageName     String?
+  testIds         String?  // JSON array (if not a package)
+  appointmentDate String   // YYYY-MM-DD
+  timeSlot        String   // HH:MM
+  durationMin     Int      @default(30)
+  status          String   @default("booked") // booked | arrived | in-progress | completed | cancelled | no-show
+  notes           String?
+  source          String   @default("walk-in") // walk-in | phone | online | whatsapp
+  isFasting       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([appointmentDate])
+  @@index([status])
+  @@index([patientPhone])
+}
+
+model AppointmentCounter {
+  id              Int      @id @default(1)
+  dateStr         String   @unique // YYYYMMDD
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// NOTIFICATIONS (WhatsApp/SMS/Email queue + history)
+// ============================================================
+model Notification {
+  id              String   @id @default(cuid())
+  channel          String  // whatsapp | sms | email
+  recipientPhone  String?
+  recipientEmail  String?
+  recipientName   String?
+  templateName    String   // report_ready | appointment_reminder | payment_link | daily_summary | otp
+  message         String
+  status          String   @default("queued") // queued | sent | failed | delivered
+  externalId      String?  // Provider message ID
+  errorMessage    String?
+  billId          String?
+  reportId        String?
+  appointmentId   String?
+  sentById        String?
+  sentByName      String?
+  attempts        Int      @default(0)
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================
+// BRANCHES (multi-location)
+// ============================================================
+model Branch {
+  id              String   @id @default(cuid())
+  branchId        String   @unique // BR-####
+  name            String
+  code            String   @unique
+  address         String?
+  phone           String?
+  email           String?
+  gstin           String?
+  isHeadOffice    Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
