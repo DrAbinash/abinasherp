@@ -1,32 +1,59 @@
-# Care ERP — Synology Container Manager deployment (PostgreSQL)
+# =============================================================================
+# Care ERP — Synology Container Manager deployment (PostgreSQL, /erp sub-path)
 #
-# 1. Create a project folder, e.g. /volume1/docker/care-erp/
-# 2. Put this file + the whole repo there, and copy `env.example` to `env`,
-#    editing the secrets inside.
-# 3. In Container Manager: Project → Create → select this folder → Build.
+# Deploy order (automatic, every build):
+#   db (healthy) → care-erp-migrate (deploy + verify, exits 0) → care-erp
 #
-# The app is served under the /erp sub-path (NEXT_PUBLIC_BASE_PATH). Point a DSM
-# reverse-proxy rule at http://<nas-ip>:3000 for the source path /erp.
+# care-erp-migrate is a one-shot container (restart: "no") that runs
+# `prisma migrate deploy` then `prisma migrate status` (schema verification).
+# The app is gated on it completing successfully, so a migration failure keeps
+# the app from starting instead of crash-looping it.
+#
+# Setup:
+#   1. cp env.example .env   and fill in the secrets (DB_PASSWORD, BOOTSTRAP_ADMIN_PIN…)
+#   2. One-time, create the durable DB volume so `compose down -v` can't wipe it:
+#        docker volume create care_erp_pgdata
+#   3. Container Manager → Project → Create → this folder → Build.
+#   4. DSM reverse-proxy: source https://<domain>/erp → http://<nas-ip>:${HOST_PORT}
+# =============================================================================
 
 services:
+
   db:
     image: postgres:16-alpine
     container_name: care-erp-db
     restart: unless-stopped
-    env_file:
-      - ./env
+    environment:
+      POSTGRES_USER: ${DB_USER:-careerp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      POSTGRES_DB: ${DB_NAME:-careerp}
     volumes:
-      # Named volume — database survives container/image rebuilds
-      - care-erp-pgdata:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
+    # DB is NOT published to the LAN — only in-stack containers reach it.
+    # (Uncomment to expose for debugging; keep it off in production.)
+    # ports:
+    #   - "${DB_HOST_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-careerp} -d ${DB_NAME:-careerp}"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 20s
-    # DB is not published to the LAN — only the app container reaches it.
-    expose:
-      - "5432"
+      retries: 30
+
+  # One-shot schema container: apply migrations, then verify no drift.
+  migrate:
+    image: care-erp:latest
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-careerp}:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/${DB_NAME:-careerp}?schema=public
+      # Identity stamp — the guard refuses to migrate against a DB carrying a
+      # different app_name/environment (protects against wrong-DATABASE_URL).
+      APP_NAME: ${APP_NAME:-care-erp}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-production}
+    # 1) identity guard  2) idempotent migrate deploy  3) status = schema verify
+    command: ["sh", "-c", "/app/scripts/db-identity-guard.sh && npx prisma migrate deploy && npx prisma migrate status"]
 
   care-erp:
     build:
@@ -40,22 +67,43 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
-      - "3000:3000"
-    env_file:
-      - ./env
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BASE_PATH: /erp
+      DATABASE_URL: postgresql://${DB_USER:-careerp}:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/${DB_NAME:-careerp}?schema=public
+      # Fail fast at `compose up` if these are missing, rather than at runtime.
+      BOOTSTRAP_ADMIN_PIN: ${BOOTSTRAP_ADMIN_PIN:?BOOTSTRAP_ADMIN_PIN must be set in .env}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@yourclinic.com}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Clinic Administrator}
+      CLINIC_NAME: ${CLINIC_NAME:-Care Diagnostic Centre}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000/erp}
+      # ICICI Orange Pay (optional — booking falls back to pay-at-centre if unset)
+      ICICI_MERCHANT_ID: ${ICICI_MERCHANT_ID:-}
+      ICICI_AGGREGATOR_ID: ${ICICI_AGGREGATOR_ID:-}
+      ICICI_SECRET_KEY: ${ICICI_SECRET_KEY:-}
+      ICICI_BASE_URL: ${ICICI_BASE_URL:-}
+      # Optional super-admin USB-key gating
+      SUPER_ADMIN_USB_KEY: ${SUPER_ADMIN_USB_KEY:-}
+      SUPER_ADMIN_USB_PIN: ${SUPER_ADMIN_USB_PIN:-}
     volumes:
-      # Persistent uploaded files (expense bills, bank statements)
-      - care-erp-uploads:/app/uploads
+      - care_erp_uploads:/app/uploads
     healthcheck:
+      # LIVENESS only — /erp/api/health does not touch the DB (see the route).
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/erp/api/health || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
 
 volumes:
-  care-erp-pgdata:
-    driver: local
-  care-erp-uploads:
+  # External so `docker compose down -v` cannot destroy patient data.
+  # Create once: docker volume create care_erp_pgdata
+  db_data:
+    external: true
+    name: care_erp_pgdata
+  care_erp_uploads:
     driver: local

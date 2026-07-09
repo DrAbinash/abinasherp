@@ -6,8 +6,14 @@ ref-repo
 tool-results
 download
 scripts
-.env.local
+!scripts/db-identity-guard.sh
 .zscripts
 db
 upload
 uploads
+tests
+examples
+# Secrets — never bake env files into the image (COPY . . in the builder)
+.env
+.env.*
+env
