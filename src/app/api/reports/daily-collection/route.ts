@@ -2,15 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getStaffSession } from '@/lib/session'
 import { istDateLabel } from '@/lib/auth'
+import { sendEmail } from '@/lib/email'
+import { sendWhatsAppMessage, buildDailySummaryMessage } from '@/lib/whatsapp'
 
-// GET /api/reports/daily-collection?date=YYYY-MM-DD
-// Comprehensive daily summary — can be emailed/WhatsApp'd to owner each night
+// GET /api/reports/daily-collection?date=YYYY-MM-DD&send=email|whatsapp|both
+// Comprehensive daily summary. With ?send=email → actually sends via SMTP.
+// With ?send=whatsapp → sends via WhatsApp to admin phone.
+// With ?send=both → sends both.
 export async function GET(req: NextRequest) {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
   const date = searchParams.get('date') || istDateLabel()
+  const send = searchParams.get('send') || '' // email | whatsapp | both
 
   const startOfDay = new Date(date + 'T00:00:00+05:30')
   const endOfDay = new Date(date + 'T23:59:59+05:30')
@@ -145,5 +150,97 @@ ${Object.entries(byMethod).map(([m, v]) => `${m.toUpperCase()}: ${v.count} txns 
 🩺 TOP TESTS
 ${topTests.slice(0, 5).map((t, i) => `${i + 1}. ${t.name}: ${t.count}`).join('\n')}`
 
-  return NextResponse.json({ summary, messageText })
+  // If send requested, actually send the email/WhatsApp
+  let emailResult: any = null
+  let whatsappResult: any = null
+  if (send === 'email' || send === 'both') {
+    const emailSettings = await db.emailSettings.findUnique({ where: { id: 1 } })
+    if (emailSettings && emailSettings.smtpHost && emailSettings.adminEmail) {
+      const extras: string[] = (() => { try { return JSON.parse(emailSettings.extraRecipients || '[]') } catch { return [] } })()
+      const recipients = [emailSettings.adminEmail, ...extras].filter(Boolean)
+      const subject = `[Daily Summary] ${date} — Collected ₹${totalCollected.toFixed(2)}`
+      const htmlBody = `<pre style="font-family: Arial, sans-serif; white-space: pre-wrap; font-size: 13px; line-height: 1.5;">${messageText}</pre>`
+      emailResult = await sendEmail({
+        to: recipients,
+        subject,
+        body: htmlBody,
+        templateName: 'daily_summary',
+        sentById: session.id,
+        sentByName: session.name,
+      })
+    } else {
+      emailResult = { ok: false, error: 'SMTP not configured' }
+    }
+  }
+  if (send === 'whatsapp' || send === 'both') {
+    const waSettings = await db.whatsAppSettings.findUnique({ where: { id: 1 } })
+    if (waSettings && waSettings.isEnabled) {
+      // Send to admin phone (stored in phoneNumber field, or pull from clinic settings)
+      const adminPhone = waSettings.phoneNumber // sender phone — for daily summary, send to admin's personal WhatsApp
+      // In production, admin phone would be a separate field. For now, use the clinic phone.
+      const clinic = await db.clinic.findFirst()
+      const recipientPhone = clinic?.phone?.replace(/[^\d]/g, '') || ''
+      if (recipientPhone) {
+        const waMessage = buildDailySummaryMessage(clinic?.name || 'Care ERP', date, {
+          totalBills: summary.totalBills,
+          totalBilled: summary.totalBilled,
+          totalCollected: summary.totalCollected,
+          totalRefunds: summary.totalRefunds,
+          totalExpenses: summary.totalExpenses,
+          netCash: summary.netCash,
+          byMethod: Object.fromEntries(Object.entries(byMethod).map(([k, v]) => [k, v.amount])),
+          newPatients: summary.newPatients,
+          appointments: summary.totalAppointments,
+        })
+        whatsappResult = await sendWhatsAppMessage({
+          to: recipientPhone,
+          message: waMessage,
+          templateName: 'daily_summary',
+          sentById: session.id,
+          sentByName: session.name,
+        })
+      } else {
+        whatsappResult = { ok: false, error: 'No admin phone configured' }
+      }
+    } else {
+      whatsappResult = { ok: false, error: 'WhatsApp not enabled' }
+    }
+  }
+
+  // Log to DailySummaryLog
+  await db.dailySummaryLog.upsert({
+    where: { summaryDate: date },
+    update: {
+      emailSent: emailResult?.ok || false,
+      emailLogId: emailResult?.logId || null,
+      whatsappSent: whatsappResult?.ok || false,
+      whatsappLogId: whatsappResult?.notificationId || null,
+      totalCollected,
+      totalBilled,
+      totalExpenses,
+      billsCount: bills.length,
+      sentAt: new Date(),
+    },
+    create: {
+      summaryDate: date,
+      emailSent: emailResult?.ok || false,
+      emailLogId: emailResult?.logId || null,
+      whatsappSent: whatsappResult?.ok || false,
+      whatsappLogId: whatsappResult?.notificationId || null,
+      totalCollected,
+      totalBilled,
+      totalExpenses,
+      billsCount: bills.length,
+      sentAt: new Date(),
+    },
+  }).catch(() => {})
+
+  return NextResponse.json({
+    summary,
+    messageText,
+    delivery: {
+      email: emailResult,
+      whatsapp: whatsappResult,
+    },
+  })
 }

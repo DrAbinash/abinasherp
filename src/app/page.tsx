@@ -18,6 +18,10 @@ import { FormFPage } from '@/components/pages/form-f'
 import { GstReportsPage, GlobalSearch } from '@/components/pages/extras'
 import { InventoryPage } from '@/components/pages/inventory'
 import { EmailSettingsPage, OnlineBookingsPage } from '@/components/pages/admin-pages'
+import { ReportsPage } from '@/components/pages/reports'
+import { PackagesPage } from '@/components/pages/packages'
+import { AppointmentsPage, NotificationsPage, BranchesPage, WhatsAppSettingsPage } from '@/components/pages/ops-pages'
+import { DailyCollectionPage, TdsReportsPage } from '@/components/pages/finance-reports'
 import { Button } from '@/components/ui/button'
 import { Database, Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/auth-context'
@@ -126,6 +130,14 @@ function PageRouter({ page }: { page: PageKey }) {
     case 'inventory': return <InventoryPage />
     case 'email-settings': return <EmailSettingsPage />
     case 'online-bookings': return <OnlineBookingsPage />
+    case 'reports': return <ReportsPage />
+    case 'packages': return <PackagesPage />
+    case 'appointments': return <AppointmentsPage />
+    case 'notifications': return <NotificationsPage />
+    case 'branches': return <BranchesPage />
+    case 'whatsapp-settings': return <WhatsAppSettingsPage />
+    case 'daily-collection': return <DailyCollectionPage />
+    case 'tds-reports': return <TdsReportsPage />
     default: return <DashboardPage />
   }
 }

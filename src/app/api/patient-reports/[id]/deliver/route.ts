@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getStaffSession } from '@/lib/session'
+import { sendWhatsAppMessage, buildReportReadyMessage } from '@/lib/whatsapp'
+import { sendEmail } from '@/lib/email'
 
 // POST /api/patient-reports/:id/deliver
-// Body: { method: "whatsapp" | "email" | "print", recipient?: string }
-// Creates a Notification record (queued for sending) and marks report as delivered
+// Body: { method: "whatsapp" | "email" | "print" | "portal", recipient?: string }
+// For whatsapp: uses WhatsApp Business API (Gupshup/Interakt/Wati/Twilio/Meta)
+// For email: uses SMTP (nodemailer)
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -14,7 +17,7 @@ export async function POST(
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))
-  const { method } = body as { method: string }
+  const { method, recipient } = body as { method: string; recipient?: string }
 
   if (!method || !['whatsapp', 'email', 'print', 'portal'].includes(method)) {
     return NextResponse.json({ error: 'method must be whatsapp, email, print, or portal' }, { status: 400 })
@@ -26,56 +29,87 @@ export async function POST(
     return NextResponse.json({ error: `Report must be approved before delivery (current: ${report.status})` }, { status: 400 })
   }
 
-  // Get clinic info for message
   const clinic = await db.clinic.findFirst()
   const clinicName = clinic?.name || 'Care Diagnostic Centre'
+  const portalLink = method === 'portal' ? `${process.env.PUBLIC_BASE_URL || 'http://localhost:3000'}/api/patient-reports/${report.id}/pdf` : undefined
 
-  // Compose message
-  const portalLink = method === 'portal' ? `\n\nView report: https://your-portal.example/r/${report.reportNumber}` : ''
-  const message = `*${clinicName}*\n\nHello ${report.patientName},\n\nYour report for *${report.testName}* is ready.\nReport Number: ${report.reportNumber}\nDate: ${new Date().toLocaleDateString('en-IN')}${portalLink}\n\nThank you for choosing us.`
+  let deliveryRef: string | undefined
 
-  // Create notification
-  const notification = await db.notification.create({
-    data: {
-      channel: method === 'print' ? 'sms' : method,
-      recipientPhone: method === 'whatsapp' || method === 'sms' ? (body.recipient || report.patientPhone) : null,
-      recipientEmail: method === 'email' ? (body.recipient || null) : null,
-      recipientName: report.patientName,
-      templateName: 'report_ready',
+  if (method === 'whatsapp') {
+    const phone = recipient || report.patientPhone
+    if (!phone) {
+      return NextResponse.json({ error: 'Patient has no phone number — cannot send WhatsApp' }, { status: 400 })
+    }
+    const message = buildReportReadyMessage(clinicName, report.patientName, report.testName, report.reportNumber, portalLink)
+    const result = await sendWhatsAppMessage({
+      to: phone,
       message,
-      status: 'queued',
+      templateName: 'report_ready',
       reportId: report.id,
       sentById: session.id,
       sentByName: session.name,
-      scheduledAt: new Date(),
-    },
-  })
+    })
+    if (!result.ok) {
+      return NextResponse.json({ error: `WhatsApp send failed: ${result.error}`, notificationId: result.notificationId }, { status: 400 })
+    }
+    deliveryRef = result.notificationId
+  } else if (method === 'email') {
+    const emailAddr = recipient || report.patientPhone // fallback — in production patient would have email field
+    if (!emailAddr) {
+      return NextResponse.json({ error: 'No email address provided' }, { status: 400 })
+    }
+    const subject = `Report Ready — ${report.testName} — ${clinicName}`
+    const body_html = `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <div style="background:#10b981; color:white; padding:20px; border-radius:8px 8px 0 0;">
+    <h2 style="margin:0;">${clinicName}</h2>
+    <p style="margin:5px 0 0; opacity:0.9;">Your report is ready</p>
+  </div>
+  <div style="border:1px solid #e5e7eb; padding:20px; border-radius:0 0 8px 8px;">
+    <p>Dear ${report.patientName},</p>
+    <p>Your report for <strong>${report.testName}</strong> is now ready.</p>
+    <table style="width:100%; border-collapse:collapse; margin:15px 0;">
+      <tr><td style="padding:8px; border:1px solid #e5e7eb; background:#f9fafb;">Report Number</td><td style="padding:8px; border:1px solid #e5e7eb;"><strong>${report.reportNumber}</strong></td></tr>
+      <tr><td style="padding:8px; border:1px solid #e5e7eb; background:#f9fafb;">Date</td><td style="padding:8px; border:1px solid #e5e7eb;">${new Date().toLocaleDateString('en-IN')}</td></tr>
+      <tr><td style="padding:8px; border:1px solid #e5e7eb; background:#f9fafb;">Test</td><td style="padding:8px; border:1px solid #e5e7eb;">${report.testName}</td></tr>
+    </table>
+    ${portalLink ? `<p><a href="${portalLink}" style="background:#10b981; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; display:inline-block;">View Report</a></p>` : ''}
+    <p style="margin-top:20px; color:#6b7280; font-size:13px;">Thank you for choosing ${clinicName}.</p>
+  </div>
+</div>`
+    const result = await sendEmail({
+      to: emailAddr,
+      subject,
+      body: body_html,
+      templateName: 'report_ready',
+      reportId: report.id,
+      sentById: session.id,
+      sentByName: session.name,
+    })
+    if (!result.ok) {
+      return NextResponse.json({ error: `Email send failed: ${result.error}` }, { status: 400 })
+    }
+    deliveryRef = result.logId
+  } else if (method === 'print' || method === 'portal') {
+    // No async send — just mark as delivered with the method
+    deliveryRef = `print-${Date.now()}`
+  }
 
   // Mark report as delivered
-  await db.patientReport.update({
+  const updated = await db.patientReport.update({
     where: { id },
     data: {
       status: 'delivered',
       deliveredAt: new Date(),
       deliveryMethod: method,
-      deliveryRef: notification.id,
-    },
-  })
-
-  // In production, this would trigger the WhatsApp Business API / SMS gateway / email service
-  // For now we mark as 'sent' immediately (mock delivery)
-  await db.notification.update({
-    where: { id: notification.id },
-    data: {
-      status: 'sent',
-      sentAt: new Date(),
-      externalId: `mock-${Date.now()}`,
+      deliveryRef,
     },
   })
 
   return NextResponse.json({
     ok: true,
-    notification,
-    report: await db.patientReport.findUnique({ where: { id } }),
+    report: updated,
+    deliveryMethod: method,
+    deliveryRef,
   })
 }

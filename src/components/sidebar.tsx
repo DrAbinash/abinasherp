@@ -10,6 +10,10 @@ import {
   ScanLine, Building2, FileBarChart, Search, FileCheck2,
   FlaskConical, Calendar, Package, MessageSquare, Network, Mail, Globe,
 } from 'lucide-react'
+
+// Reusable icon aliases
+const DailyCollection = FileBarChart
+const TdsReports = FileBarChart
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +25,7 @@ export type PageKey =
   | 'day-close' | 'expense-bills' | 'suppliers' | 'form-f' | 'gst-reports'
   | 'reports' | 'packages' | 'inventory' | 'appointments' | 'notifications' | 'branches'
   | 'email-settings' | 'online-bookings'
+  | 'whatsapp-settings' | 'daily-collection' | 'tds-reports'
 
 interface NavItem {
   key: PageKey
@@ -47,6 +52,8 @@ const NAV: NavItem[] = [
   { key: 'commission', label: 'Commission Report', icon: Percent, group: 'Finance', superAdminOnly: true },
   { key: 'doctor-ledger', label: 'Doctor Ledger', icon: FileText, group: 'Finance', superAdminOnly: true },
   { key: 'gst-reports', label: 'GST Reports', icon: FileBarChart, group: 'Finance', superAdminOnly: true },
+  { key: 'tds-reports', label: 'TDS Reports', icon: TdsReports, group: 'Finance', superAdminOnly: true },
+  { key: 'daily-collection', label: 'Daily Collection', icon: DailyCollection, group: 'Finance', superAdminOnly: true },
   { key: 'reports', label: 'Lab Reports', icon: FileText, group: 'Finance' },
 
   { key: 'referrals', label: 'Referral Doctors', icon: Stethoscope, group: 'People', permission: '/doctors' },
@@ -58,6 +65,7 @@ const NAV: NavItem[] = [
 
   { key: 'clinic', label: 'Clinic Settings', icon: Settings, group: 'Admin' },
   { key: 'email-settings', label: 'Email & SMTP', icon: Mail, group: 'Admin', superAdminOnly: true },
+  { key: 'whatsapp-settings', label: 'WhatsApp', icon: MessageSquare, group: 'Admin', superAdminOnly: true },
   { key: 'online-bookings', label: 'Online Bookings', icon: Globe, group: 'Admin', superAdminOnly: true },
   { key: 'branches', label: 'Branches', icon: Network, group: 'Admin', superAdminOnly: true },
   { key: 'role-permissions', label: 'Role Permissions', icon: ShieldCheck, group: 'Admin', superAdminOnly: true },

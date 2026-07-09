@@ -1334,3 +1334,39 @@ model Branch {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+// ============================================================
+// WHATSAPP (Business API integration)
+// ============================================================
+model WhatsAppSettings {
+  id              Int      @id @default(1)
+  provider        String   @default("gupshup") // gupshup | interakt | wati | twilio | meta
+  apiKey          String   @default("")
+  apiSecret       String   @default("")
+  phoneNumber     String   @default("") // Sender phone (with country code, no +)
+  templateNamespace String @default("") // For template message IDs
+  isEnabled       Boolean  @default(false)
+  // Auto-send triggers
+  sendOnReportReady Boolean @default(true)
+  sendOnBillCreated Boolean @default(false)
+  sendOnAppointmentReminder Boolean @default(true)
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================
+// DAILY SUMMARY LOG (track when daily emails were sent)
+// ============================================================
+model DailySummaryLog {
+  id              String   @id @default(cuid())
+  summaryDate     String   @unique // YYYY-MM-DD
+  emailSent       Boolean  @default(false)
+  emailLogId      String?
+  whatsappSent    Boolean  @default(false)
+  whatsappLogId   String?
+  totalCollected  Float    @default(0)
+  totalBilled     Float    @default(0)
+  totalExpenses   Float    @default(0)
+  billsCount      Int      @default(0)
+  sentAt          DateTime?
+  createdAt       DateTime @default(now())
+}
