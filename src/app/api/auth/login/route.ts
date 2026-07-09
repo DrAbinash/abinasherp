@@ -3,8 +3,39 @@ import { db } from '@/lib/db'
 import { hashPin, verifyPin, generateToken, DEFAULT_ROLE_PERMISSIONS, normalizeRole } from '@/lib/auth'
 import { bootstrapAdminIfNeeded } from '@/lib/seed'
 
+// In-memory IP rate limiting: max 20 failed attempts per IP per 15 minutes
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
+const RATE_LIMIT_MAX = 20
+const ipFailures = new Map<string, { count: number; resetAt: number }>()
+
+function getIp(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = ipFailures.get(ip)
+  if (!entry || entry.resetAt < now) return false
+  return entry.count >= RATE_LIMIT_MAX
+}
+
+function recordFailure(ip: string): void {
+  const now = Date.now()
+  const entry = ipFailures.get(ip)
+  if (!entry || entry.resetAt < now) {
+    ipFailures.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+  } else {
+    entry.count++
+  }
+}
+
 export async function POST(req: NextRequest) {
   await bootstrapAdminIfNeeded()
+
+  const ip = getIp(req)
+  if (isRateLimited(ip)) {
+    return NextResponse.json({ error: 'Too many failed attempts. Try again later.' }, { status: 429 })
+  }
 
   const body = await req.json().catch(() => ({}))
   const { name, email, pin } = body
@@ -25,6 +56,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (!user) {
+    recordFailure(ip)
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
 
@@ -34,6 +66,7 @@ export async function POST(req: NextRequest) {
 
   const ok = await verifyPin(pin, user.pinHash)
   if (!ok) {
+    recordFailure(ip)
     const attempts = user.failedLoginAttempts + 1
     const lockFor = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null
     await db.user.update({
@@ -42,6 +75,9 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
+
+  // Successful login — clear IP failure counter
+  ipFailures.delete(ip)
 
   await db.user.update({
     where: { id: user.id },

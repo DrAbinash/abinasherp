@@ -33,11 +33,11 @@ import { AnalyticsPage } from '@/components/pages/analytics'
 import { Patient360Page } from '@/components/pages/patient-360'
 import { ReferralAnalyticsPage } from '@/components/pages/referral-analytics'
 import { CompliancePage } from '@/components/pages/compliance'
+import { PaymentsPage } from '@/components/pages/payments'
 import { Button } from '@/components/ui/button'
 import { Database, Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/auth-context'
 import { toast } from 'sonner'
-import { useEffect } from 'react'
 
 function Shell() {
   const { user, isLoading } = useAuth()
@@ -79,22 +79,6 @@ function SeedButton() {
   const api = useApi()
   const [seeding, setSeeding] = useState(false)
   const [done, setDone] = useState(false)
-
-  // Auto-seed once on first login
-  useEffect(() => {
-    api.get('/api/dashboard').then(async (d) => {
-      if (!d.totals || (d.totals.patients === 0 && d.totals.doctors === 0)) {
-        setSeeding(true)
-        try {
-          await api.post('/api/seed-demo')
-          setDone(true)
-          toast.success('Demo data seeded — start exploring!')
-        } catch (e: any) {
-          // silent
-        } finally { setSeeding(false) }
-      }
-    }).catch(() => {})
-  }, [])
 
   if (done) return null
   return (
@@ -162,6 +146,7 @@ function PageRouter({ page }: { page: PageKey }) {
     case 'patient-360': return <Patient360Page />
     case 'referral-analytics': return <ReferralAnalyticsPage />
     case 'compliance': return <CompliancePage />
+    case 'payments': return <PaymentsPage />
     case 'whatsapp-chatbot': return <WhatsAppSettingsPage />
     case 'translations': return <ClinicPage />
     default: return <DashboardPage />

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const tdsRate = 0.10 // 10% under Section 194J
 
   // Get all doctor payouts in the period
-  const dateWhere: Record<string, unknown> = {}
+  const dateWhere: any = {}
   if (from) dateWhere.paymentDate = { gte: from }
   if (to) {
     if (!dateWhere.paymentDate) dateWhere.paymentDate = {}

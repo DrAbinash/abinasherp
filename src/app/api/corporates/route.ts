@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type') || ''
 
   const where: Record<string, unknown> = { isActive: true }
-  if (q) where.name = { contains: q }
+  if (q) where.name = { contains: q, mode: 'insensitive' as const }
   if (type) where.type = type
 
   const corporates = await db.corporate.findMany({

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -50,9 +51,9 @@ export function BookingApp() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/public/booking/packages').then((r) => r.json()),
-      fetch('/api/public/booking/tests').then((r) => r.json()),
-      fetch('/api/public/booking/slots').then((r) => r.json()),
+      fetch(apiPath('/api/public/booking/packages')).then((r) => r.json()),
+      fetch(apiPath('/api/public/booking/tests')).then((r) => r.json()),
+      fetch(apiPath('/api/public/booking/slots')).then((r) => r.json()),
     ]).then(([p, t, s]) => {
       setPackages(p.packages || [])
       setTests(t.tests || [])
@@ -76,7 +77,7 @@ export function BookingApp() {
     }
     setSubmitting(true)
     try {
-      const res = await fetch('/api/public/booking/initiate', {
+      const res = await fetch(apiPath('/api/public/booking/initiate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

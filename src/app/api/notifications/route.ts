@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const channel = searchParams.get('channel') || ''
   const status = searchParams.get('status') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (channel) where.channel = channel
   if (status) where.status = status
 

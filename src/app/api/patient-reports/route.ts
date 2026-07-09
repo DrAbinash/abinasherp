@@ -12,15 +12,15 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   const billId = searchParams.get('billId') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
   if (billId) where.billId = billId
   if (q) {
     where.OR = [
-      { patientName: { contains: q } },
-      { patientPhone: { contains: q } },
-      { reportNumber: { contains: q } },
-      { testName: { contains: q } },
+      { patientName: { contains: q, mode: 'insensitive' as const } },
+      { patientPhone: { contains: q, mode: 'insensitive' as const } },
+      { reportNumber: { contains: q, mode: 'insensitive' as const } },
+      { testName: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

@@ -14,15 +14,16 @@ export async function GET(req: NextRequest) {
   const method = searchParams.get('method') || ''
   const from = searchParams.get('from') || ''
   const to = searchParams.get('to') || ''
-  const limit = parseInt(searchParams.get('limit') || '100')
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200)
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (billId) where.billId = billId
   if (method) where.method = method
   if (from || to) {
-    where.createdAt = {}
-    if (from) where.createdAt.gte = new Date(from + 'T00:00:00+05:30')
-    if (to) where.createdAt.lte = new Date(to + 'T23:59:59+05:30')
+    const createdAt: { gte?: Date; lte?: Date } = {}
+    if (from) createdAt.gte = new Date(from + 'T00:00:00+05:30')
+    if (to) createdAt.lte = new Date(to + 'T23:59:59+05:30')
+    where.createdAt = createdAt
   }
 
   const payments = await db.payment.findMany({
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   const newPaid = bill.paidAmount + amount
   const newBalance = Math.max(0, bill.totalAmount - newPaid - bill.refundAmount)
-  const status = newPaid >= bill.totalAmount ? 'paid' : 'partial'
+  const status = newPaid >= bill.totalAmount - 0.001 ? 'paid' : (newPaid > 0 ? 'partial' : 'pending')
 
   const updated = await db.bill.update({
     where: { id: billId },

@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const account = await db.account.findUnique({ where: { id: accountId } })
   if (!account) return NextResponse.json({ error: 'Account not found' }, { status: 404 })
 
-  const where: Record<string, unknown> = {
+  const where: any = {
     OR: [{ creditAccountId: accountId }, { debitAccountId: accountId }],
   }
   if (from || to) {

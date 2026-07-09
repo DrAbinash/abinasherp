@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get('category') || ''
 
   const where: Record<string, unknown> = { isActive: true }
-  if (q) where.name = { contains: q }
+  if (q) where.name = { contains: q, mode: 'insensitive' as const }
   if (category) where.category = category
 
   const packages = await db.package.findMany({

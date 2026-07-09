@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -15,6 +15,7 @@ datasource db {
 // ============================================================
 model Clinic {
   id              String   @id @default(cuid())
+  singleton       String   @unique @default("clinic") // enforces a single Clinic row
   name            String
   address         String?
   phone           String?
@@ -122,6 +123,10 @@ model AuditLog {
   details         String?  // JSON string
   ipAddress       String?
   createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([module])
+  @@index([createdAt])
 }
 
 // ============================================================
@@ -143,6 +148,7 @@ model Patient {
 
   orders          Order[]
   bills           Bill[]
+  corporateLinks  CorporatePatient[]
 }
 
 model Doctor {
@@ -191,6 +197,10 @@ model Test {
 
   category        TestCategory? @relation(fields: [categoryId], references: [id])
   orderTests      OrderTest[]
+  corporateRateCards CorporateRateCard[]
+
+  @@index([categoryId])
+  @@index([isActive])
 }
 
 // ============================================================
@@ -214,6 +224,11 @@ model Order {
   doctor          Doctor?  @relation(fields: [doctorId], references: [id])
   orderTests      OrderTest[]
   bills           Bill[]
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model OrderTest {
@@ -411,7 +426,7 @@ model Expense {
 }
 
 model ExpenseCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   yearMonth       String   @unique // YYMM
   counter         Int      @default(0)
 }
@@ -488,7 +503,7 @@ model ExpenseBill {
 }
 
 model ExpenseBillCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   yearMonth       String   @unique
   counter         Int      @default(0)
 }
@@ -553,7 +568,7 @@ model FormFRecord {
 }
 
 model FormFCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   year            String   @unique // YYYY
   counter         Int      @default(0)
 }
@@ -1027,7 +1042,7 @@ model PatientReport {
 }
 
 model PatientReportCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   yearMonth       String   @unique
   counter         Int      @default(0)
 }
@@ -1283,7 +1298,7 @@ model Appointment {
 }
 
 model AppointmentCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   dateStr         String   @unique // YYYYMMDD
   counter         Int      @default(0)
 }
@@ -1447,7 +1462,7 @@ model Sample {
 }
 
 model SampleCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   dateStr         String   @unique // YYYYMMDD
   counter         Int      @default(0)
 }
@@ -1504,7 +1519,7 @@ model HomeCollectionRequest {
 }
 
 model HomeCollectionCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   dateStr         String   @unique
   counter         Int      @default(0)
 }
@@ -1552,6 +1567,7 @@ model CorporateRateCard {
   updatedAt       DateTime @updatedAt
 
   corporate       Corporate @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+  test            Test      @relation(fields: [testId], references: [id])
 
   @@unique([corporateId, testId])
   @@index([corporateId])
@@ -1567,6 +1583,7 @@ model CorporatePatient {
   createdAt       DateTime @default(now())
 
   corporate       Corporate @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+  patient         Patient   @relation(fields: [patientId], references: [id])
 
   @@unique([corporateId, patientId])
   @@index([corporateId])
@@ -1598,7 +1615,7 @@ model CorporateInvoice {
 }
 
 model CorporateInvoiceCounter {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
   yearMonth       String   @unique
   counter         Int      @default(0)
 }

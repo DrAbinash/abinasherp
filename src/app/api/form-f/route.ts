@@ -10,14 +10,14 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status') || ''
   const q = searchParams.get('q') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
   if (q) {
     where.OR = [
-      { patientName: { contains: q } },
-      { formFId: { contains: q } },
-      { billNumber: { contains: q } },
-      { mobile: { contains: q } },
+      { patientName: { contains: q, mode: 'insensitive' as const } },
+      { formFId: { contains: q, mode: 'insensitive' as const } },
+      { billNumber: { contains: q, mode: 'insensitive' as const } },
+      { mobile: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

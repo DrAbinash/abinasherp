@@ -21,11 +21,12 @@ function randomKey(len: number): string {
 export async function GET(req: NextRequest) {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session.isOwner) return NextResponse.json({ error: 'Forbidden: owner role required' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const includeInactive = searchParams.get('includeInactive') === 'true'
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (!includeInactive) where.isActive = true
 
   const keys = await db.apiKey.findMany({
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session.isOwner) return NextResponse.json({ error: 'Forbidden: owner role required' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
   const { name, permissions, rateLimitPerMin } = body

@@ -26,9 +26,9 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = { isActive: true }
   if (q) {
     where.OR = [
-      { name: { contains: q } },
-      { phone: { contains: q } },
-      { patientId: { contains: q } },
+      { name: { contains: q, mode: 'insensitive' as const } },
+      { phone: { contains: q, mode: 'insensitive' as const } },
+      { patientId: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

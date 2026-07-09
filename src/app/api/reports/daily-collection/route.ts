@@ -52,15 +52,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // By test (top 10)
-  const testCount: Record<string, number> = {}
-  for (const b of bills) {
-    for (const ot of b.order.orderTests) {
-      if (ot.status === 'cancelled') continue
-      testCount[ot.test.name || 'Unknown'] = (testCount[ot.test.name || 'Unknown'] || 0) + 1
-    }
-  }
-  // Actually need to load orderTests
+  // By test (top 10) — load orderTests
   const billsWithTests = await db.bill.findMany({
     where: { createdAt: { gte: startOfDay, lte: endOfDay }, status: { not: 'cancelled' } },
     include: { order: { include: { orderTests: { include: { test: true } } } } },

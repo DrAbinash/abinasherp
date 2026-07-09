@@ -8,6 +8,9 @@ export async function bootstrapAdminIfNeeded() {
 
   const email = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@careerp.local'
   const name = process.env.BOOTSTRAP_ADMIN_NAME || 'System Administrator'
+  if (process.env.NODE_ENV === 'production' && !process.env.BOOTSTRAP_ADMIN_PIN) {
+    throw new Error('BOOTSTRAP_ADMIN_PIN must be set in production')
+  }
   const pin = process.env.BOOTSTRAP_ADMIN_PIN || 'admin123'
   const role = 'super_admin'
 
@@ -18,7 +21,7 @@ export async function bootstrapAdminIfNeeded() {
       role,
       pinHash: await hashPin(pin),
       permissions: JSON.stringify(DEFAULT_ROLE_PERMISSIONS[role] || ['*']),
-      mustChangePin: false,
+      mustChangePin: true,
       remoteLoginEnabled: true, // Allow login without USB key for first setup
       isActive: true,
     },
@@ -38,7 +41,12 @@ export async function bootstrapAdminIfNeeded() {
   }
 
   // Seed default role permissions
-  const rolePerms = [
+  const rolePerms: Array<{
+    role: string; all?: boolean; modules?: string[]
+    canView?: boolean; canCreate?: boolean; canEdit?: boolean; canDelete?: boolean
+    canPrint?: boolean; canReprint?: boolean; canRefund?: boolean; canExport?: boolean
+    canApprove?: boolean; canFinalize?: boolean
+  }> = [
     { role: 'super_admin', all: true },
     { role: 'admin', all: true },
     { role: 'manager', modules: ['dashboard', 'patients', 'billing', 'payments', 'orders', 'doctors', 'referrals', 'accounting', 'expenses', 'staff', 'banking'], canView: true, canCreate: true, canEdit: true, canDelete: true, canPrint: true, canExport: true },

@@ -11,7 +11,7 @@ export async function PATCH(
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   if (body.name !== undefined) update.name = body.name
   if (body.testId !== undefined) update.testId = body.testId
   if (body.testName !== undefined) update.testName = body.testName

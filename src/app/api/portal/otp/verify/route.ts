@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   // Find patient
   const patient = await db.patient.findFirst({
-    where: { phone: { contains: normalizedPhone.slice(-10) } },
+    where: { phone: { contains: normalizedPhone.slice(-10), mode: 'insensitive' as const } },
   })
   if (!patient) {
     return NextResponse.json({ error: 'Patient not found' }, { status: 404 })

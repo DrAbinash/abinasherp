@@ -32,11 +32,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (SUPER_ADMIN_USB_PIN && usbPin && usbPin === SUPER_ADMIN_USB_PIN) {
-    // skip PIN check
-  } else {
-    const ok = await verifyPin(pin, user.pinHash)
-    if (!ok) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+  // The per-user PIN (bcrypt) is ALWAYS verified — no shared-secret bypass.
+  const ok = await verifyPin(pin, user.pinHash)
+  if (!ok) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+
+  // If USB PIN gating is configured, it applies IN ADDITION to the user PIN.
+  if (SUPER_ADMIN_USB_PIN && usbPin !== SUPER_ADMIN_USB_PIN) {
+    return NextResponse.json({ error: 'Invalid USB PIN' }, { status: 401 })
   }
 
   const token = generateToken(48)

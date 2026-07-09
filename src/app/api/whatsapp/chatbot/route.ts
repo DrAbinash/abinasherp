@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
+import { getStaffSession } from '@/lib/session'
 
 const SYSTEM_PROMPT = `You are a helpful assistant for Care Diagnostic Centre. Answer questions about: test prices, timings, appointments, report status, fasting requirements, home collection. Be concise. If asked about specific patient data, say 'Please call the centre.'`
 
 export async function POST(req: NextRequest) {
+  const session = await getStaffSession()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const body = await req.json().catch(() => ({}))
   const { phone, message } = body
 

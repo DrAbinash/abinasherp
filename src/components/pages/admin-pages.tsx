@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath, getBasePath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -48,7 +49,7 @@ export function EmailSettingsPage() {
 
   const sendTest = async () => {
     try {
-      const res = await fetch('/api/notifications/send', {
+      const res = await fetch(apiPath('/api/notifications/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('care_erp_token') || ''}` },
         body: JSON.stringify({
@@ -216,10 +217,10 @@ export function OnlineBookingsPage() {
               <p className="text-sm text-muted-foreground mb-2">Share this link with patients for online booking + ICICI Orange Pay payment</p>
               <div className="flex items-center gap-2">
                 <code className="bg-white px-3 py-1.5 rounded border text-sm flex-1">
-                  {typeof window !== 'undefined' ? window.location.origin : 'https://your-clinic.com'}/booking
+                  {typeof window !== 'undefined' ? window.location.origin : 'https://your-clinic.com'}{getBasePath()}/booking
                 </code>
                 <Button size="sm" variant="outline" onClick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/booking`)
+                  navigator.clipboard.writeText(`${window.location.origin}${getBasePath()}/booking`)
                   toast.success('Booking URL copied')
                 }}>Copy</Button>
               </div>
@@ -245,7 +246,7 @@ export function OnlineBookingsPage() {
           </div>
           <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
             <strong>Webhook URL:</strong> Configure this in ICICI merchant dashboard for server-to-server payment notifications:<br />
-            <code className="bg-white px-2 py-0.5 rounded">{typeof window !== 'undefined' ? window.location.origin : 'https://your-clinic.com'}/api/gateway/icici-webhook</code>
+            <code className="bg-white px-2 py-0.5 rounded">{typeof window !== 'undefined' ? window.location.origin : 'https://your-clinic.com'}{getBasePath()}/api/gateway/icici-webhook</code>
           </div>
         </CardContent>
       </Card>

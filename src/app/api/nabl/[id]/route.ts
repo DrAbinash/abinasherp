@@ -29,7 +29,7 @@ export async function PATCH(
   const body = await req.json().catch(() => ({}))
   const { title, status, findings, notes, auditorName } = body
 
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   if (title !== undefined) update.title = title
   if (status !== undefined) update.status = status
   if (notes !== undefined) update.notes = notes

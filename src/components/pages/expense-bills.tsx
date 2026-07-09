@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -132,14 +133,9 @@ function UploadBillDialog({ onClose, onDone }: { onClose: () => void; onDone: (b
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await fetch('/api/expenses/scan-bill', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${api.get ? '' : ''}` }, // unused, will use below
-        body: fd,
-      })
       // The useApi hook doesn't support FormData; use direct fetch with token from localStorage
       const token = typeof window !== 'undefined' ? localStorage.getItem('care_erp_token') : ''
-      const res2 = await fetch('/api/expenses/scan-bill', {
+      const res2 = await fetch(apiPath('/api/expenses/scan-bill'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token || ''}` },
         body: fd,
@@ -321,7 +317,7 @@ function ReviewBillDialog({ bill, onClose, onDone }: { bill: any; onClose: () =>
       // Update fields first
       await api.patch(`/api/expense-bills/${bill.id}/post`, form).catch(() => {})
       // Actually call POST to post to ledger
-      const res = await fetch(`/api/expense-bills/${bill.id}/post`, {
+      const res = await fetch(apiPath(`/api/expense-bills/${bill.id}/post`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('care_erp_token') || ''}` },
         body: JSON.stringify(form),

@@ -32,7 +32,7 @@ export async function PATCH(
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   const allowed = ['name', 'type', 'contactPerson', 'phone', 'email', 'gstin', 'pan', 'address', 'city', 'state', 'pincode', 'creditTermsDays', 'creditLimit', 'isActive', 'notes']
   for (const k of allowed) {
     if (body[k] !== undefined) update[k] = body[k]

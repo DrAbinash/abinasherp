@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getStaffSession } from '@/lib/session'
 import { generateBillNumber, classifyPaymentMethod, istDateLabel } from '@/lib/auth'
+import { withUniqueRetry } from '@/lib/sequence'
 import { autoVoucherForPayment } from '@/lib/seed'
 
 // GET /api/bills — list bills with filters
@@ -14,16 +15,16 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status') || ''
   const from = searchParams.get('from') || ''
   const to = searchParams.get('to') || ''
-  const limit = parseInt(searchParams.get('limit') || '50')
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200)
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
   if (q) {
     where.OR = [
-      { billNumber: { contains: q } },
-      { patient: { name: { contains: q } } },
-      { patient: { phone: { contains: q } } },
-      { patient: { patientId: { contains: q } } },
+      { billNumber: { contains: q, mode: 'insensitive' as const } },
+      { patient: { name: { contains: q, mode: 'insensitive' as const } } },
+      { patient: { phone: { contains: q, mode: 'insensitive' as const } } },
+      { patient: { patientId: { contains: q, mode: 'insensitive' as const } } },
     ]
   }
   if (from || to) {
@@ -119,50 +120,53 @@ export async function POST(req: NextRequest) {
   else if (paidAmountInline > 0) status = 'partial'
   else status = 'pending'
 
-  // Generate bill number (global MAX+1 within YYYYMM bucket)
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const prefix = `${yyyy}${mm}`
-  const recentBills = await db.bill.findMany({
-    where: { billNumber: { startsWith: prefix } },
-    select: { billNumber: true },
-  })
-  let maxSeq = 0
-  for (const b of recentBills) {
-    const seq = parseInt(b.billNumber.slice(prefix.length), 10)
-    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq
-  }
-  const billNumber = generateBillNumber(maxSeq + 1)
-
   // Resolve ledger: order → doctor → walk-in
   let ledgerId = order.ledgerId || order.doctor?.ledgerId || null
 
-  const bill = await db.bill.create({
-    data: {
-      billNumber,
-      orderId: order.id,
-      patientId: order.patientId,
-      subtotal,
-      discount: discountAmt,
-      discountReason: discountReason || null,
-      discountReasonNote: discountReasonNote || null,
-      taxAmount,
-      totalAmount,
-      paidAmount: paidAmountInline,
-      balanceAmount: balanceAmountInline,
-      status,
-      ledgerId,
-      dueDate: dueDate || null,
-      createdById: session.id,
-      createdByName: session.name,
-      clientRef: clientRef || null,
-      originalTotal: totalAmount,
-    },
-    include: {
-      patient: true,
-      order: { include: { doctor: true, orderTests: { include: { test: true } } } },
-    },
+  // Generate bill number (global MAX+1 within YYYYMM bucket) and insert,
+  // retrying on a unique-collision so concurrent bills don't 500.
+  const bill = await withUniqueRetry(async () => {
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const prefix = `${yyyy}${mm}`
+    const recentBills = await db.bill.findMany({
+      where: { billNumber: { startsWith: prefix } },
+      select: { billNumber: true },
+    })
+    let maxSeq = 0
+    for (const b of recentBills) {
+      const seq = parseInt(b.billNumber.slice(prefix.length), 10)
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq
+    }
+    const billNumber = generateBillNumber(maxSeq + 1)
+
+    return db.bill.create({
+      data: {
+        billNumber,
+        orderId: order.id,
+        patientId: order.patientId,
+        subtotal,
+        discount: discountAmt,
+        discountReason: discountReason || null,
+        discountReasonNote: discountReasonNote || null,
+        taxAmount,
+        totalAmount,
+        paidAmount: paidAmountInline,
+        balanceAmount: balanceAmountInline,
+        status,
+        ledgerId,
+        dueDate: dueDate || null,
+        createdById: session.id,
+        createdByName: session.name,
+        clientRef: clientRef || null,
+        originalTotal: totalAmount,
+      },
+      include: {
+        patient: true,
+        order: { include: { doctor: true, orderTests: { include: { test: true } } } },
+      },
+    })
   })
 
   // Insert payment rows + auto-vouchers

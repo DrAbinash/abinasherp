@@ -10,13 +10,13 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   const type = searchParams.get('type') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (q) {
     where.OR = [
-      { name: { contains: q } },
-      { supplierId: { contains: q } },
-      { phone: { contains: q } },
-      { gstin: { contains: q } },
+      { name: { contains: q, mode: 'insensitive' as const } },
+      { supplierId: { contains: q, mode: 'insensitive' as const } },
+      { phone: { contains: q, mode: 'insensitive' as const } },
+      { gstin: { contains: q, mode: 'insensitive' as const } },
     ]
   }
   if (type) where.type = type

@@ -26,7 +26,7 @@ export async function PATCH(
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))
-  const update: Record<string, unknown> = {}
+  const update: any = {}
 
   if (body.status) update.status = body.status
   if (body.cancelReason) {

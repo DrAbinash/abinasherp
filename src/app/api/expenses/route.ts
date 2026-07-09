@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const to = searchParams.get('to') || ''
   const limit = parseInt(searchParams.get('limit') || '100')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (category) where.category = category
   if (from || to) {
     where.expenseDate = {}

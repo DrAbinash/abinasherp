@@ -29,11 +29,18 @@ export async function getStaffSession(): Promise<StaffSession | null> {
   if (session.expiresAt < new Date()) return null
   if (!session.user.isActive) return null
 
-  // Touch last activity
-  await db.session.update({
-    where: { id: session.id },
-    data: { lastActivityAt: new Date() },
-  })
+  // Touch last activity — throttled to at most once per 5 minutes to avoid
+  // serializing every request on a DB write
+  const THROTTLE_MS = 5 * 60 * 1000
+  if (
+    !session.lastActivityAt ||
+    session.lastActivityAt.getTime() < Date.now() - THROTTLE_MS
+  ) {
+    await db.session.update({
+      where: { id: session.id },
+      data: { lastActivityAt: new Date() },
+    })
+  }
 
   const normalized = normalizeRole(session.user.role)
   let permissions: string[] = []

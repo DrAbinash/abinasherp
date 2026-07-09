@@ -40,7 +40,7 @@ export async function PATCH(
   const invoice = await db.corporateInvoice.findUnique({ where: { id } })
   if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   if (status) update.status = status
   if (paidAmount !== undefined) update.paidAmount = parseFloat(paidAmount)
   if (status === 'paid') {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getStaffSession } from '@/lib/session'
 import { generateVoucherNumber, istDateLabel } from '@/lib/auth'
+import { withUniqueRetry } from '@/lib/sequence'
 
 export async function GET(req: NextRequest) {
   const session = await getStaffSession()
@@ -14,14 +15,14 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   const limit = parseInt(searchParams.get('limit') || '200')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (type) where.type = type
   if (q) {
     where.OR = [
-      { voucherNumber: { contains: q } },
-      { particular: { contains: q } },
-      { remark: { contains: q } },
-      { reference: { contains: q } },
+      { voucherNumber: { contains: q, mode: 'insensitive' as const } },
+      { particular: { contains: q, mode: 'insensitive' as const } },
+      { remark: { contains: q, mode: 'insensitive' as const } },
+      { reference: { contains: q, mode: 'insensitive' as const } },
     ]
   }
   if (from || to) {
@@ -56,27 +57,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Credit and debit accounts must differ' }, { status: 400 })
   }
 
-  // Race-safe voucher number
-  const count = await db.voucher.count({ where: { type } })
-  const voucherNumber = generateVoucherNumber(type, count + 1)
-
-  const voucher = await db.voucher.create({
-    data: {
-      voucherNumber,
-      type,
-      date: date || istDateLabel(),
-      creditAccountId,
-      debitAccountId,
-      amount: parseFloat(amount),
-      particular,
-      remark,
-      reference,
-      narration,
-      billId: billId || null,
-      performedBy: session.name,
-      createdById: session.id,
-    },
-    include: { creditAccount: true, debitAccount: true },
+  // Race-safe voucher number — retry on unique collision under concurrency.
+  const voucher = await withUniqueRetry(async () => {
+    const count = await db.voucher.count({ where: { type } })
+    const voucherNumber = generateVoucherNumber(type, count + 1)
+    return db.voucher.create({
+      data: {
+        voucherNumber,
+        type,
+        date: date || istDateLabel(),
+        creditAccountId,
+        debitAccountId,
+        amount: parseFloat(amount),
+        particular,
+        remark,
+        reference,
+        narration,
+        billId: billId || null,
+        performedBy: session.name,
+        createdById: session.id,
+      },
+      include: { creditAccount: true, debitAccount: true },
+    })
   })
 
   return NextResponse.json({ voucher })

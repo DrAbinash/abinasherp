@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi, useAuth } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,7 +39,7 @@ export function BackupPage() {
   const downloadBackup = async () => {
     setDownloading(true)
     try {
-      const res = await fetch('/api/backup/download', {
+      const res = await fetch(apiPath('/api/backup/download'), {
         headers: { Authorization: `Bearer ${token || ''}` },
       })
       if (!res.ok) {
@@ -49,7 +50,7 @@ export function BackupPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `care-erp-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`
+      a.download = `care-erp-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.sql`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -67,7 +68,7 @@ export function BackupPage() {
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
-      const res = await fetch('/api/backup/restore', {
+      const res = await fetch(apiPath('/api/backup/restore'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token || ''}` },
         body: formData,
@@ -126,7 +127,7 @@ export function BackupPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Download className="w-5 h-5 text-emerald-600" /> Download Backup</CardTitle>
-            <CardDescription>Stream the live SQLite database file to your device</CardDescription>
+            <CardDescription>Download a PostgreSQL SQL dump (pg_dump) of the database</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {loading ? (
@@ -143,7 +144,7 @@ export function BackupPage() {
                   <div className="flex justify-between"><span className="text-muted-foreground">Last checked</span><span className="text-xs">{formatDateTime(info?.timestamp)}</span></div>
                 </div>
                 <Button onClick={downloadBackup} disabled={downloading || !info?.database?.exists || !isOwner} className="w-full bg-brand-gradient text-white">
-                  {downloading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Downloading...</> : <><Download className="w-4 h-4 mr-2" /> Download Backup (.db)</>}
+                  {downloading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Downloading...</> : <><Download className="w-4 h-4 mr-2" /> Download Backup (.sql)</>}
                 </Button>
                 <p className="text-xs text-muted-foreground">{info?.instructions}</p>
               </div>
@@ -155,7 +156,7 @@ export function BackupPage() {
         <Card className={isOwner ? '' : 'opacity-60'}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Upload className="w-5 h-5 text-amber-600" /> Restore from Backup</CardTitle>
-            <CardDescription>Replace the current database with a previously-saved .db file</CardDescription>
+            <CardDescription>Restore the database from a previously-saved .sql dump</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Card className="border-rose-200 bg-rose-50">
@@ -169,11 +170,11 @@ export function BackupPage() {
             </Card>
 
             <div>
-              <Label>SQLite Backup File (.db)</Label>
+              <Label>PostgreSQL SQL Dump (.sql)</Label>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".db,.sqlite,.sqlite3,application/octet-stream"
+                accept=".sql,text/plain,application/sql"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 disabled={!isOwner || restoring}
                 className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand-gradient file:text-white file:cursor-pointer file:font-medium hover:file:opacity-90 border border-input rounded-md disabled:opacity-50"
@@ -191,7 +192,7 @@ export function BackupPage() {
             </Button>
 
             <div className="text-xs text-muted-foreground space-y-1">
-              <p className="flex items-center gap-1"><Database className="w-3.5 h-3.5" /> File must be a valid SQLite database (max 200 MB)</p>
+              <p className="flex items-center gap-1"><Database className="w-3.5 h-3.5" /> File must be a valid pg_dump SQL file (max 500 MB)</p>
               <p className="flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> After restore, restart the application to apply changes</p>
             </div>
           </CardContent>

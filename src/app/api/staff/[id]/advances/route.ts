@@ -8,6 +8,7 @@ export async function GET(
 ) {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session.isOwner) return NextResponse.json({ error: 'Forbidden: owner role required' }, { status: 403 })
 
   const { id } = await params
   const advances = await db.staffAdvance.findMany({
@@ -23,6 +24,7 @@ export async function POST(
 ) {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session.isOwner) return NextResponse.json({ error: 'Forbidden: owner role required' }, { status: 403 })
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))

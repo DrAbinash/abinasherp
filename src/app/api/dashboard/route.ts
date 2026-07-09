@@ -11,7 +11,7 @@ export async function GET() {
   const startOfToday = new Date(today + 'T00:00:00+05:30')
   const endOfToday = new Date(today + 'T23:59:59+05:30')
 
-  const [billsToday, paymentsToday, expensesToday, patientsCount, doctorsCount, staffCount, billsAll, pendingBills, ordersToday] = await Promise.all([
+  const [billsToday, paymentsToday, expensesToday, patientsCount, doctorsCount, staffCount, revenueAgg, dueAgg, ordersToday] = await Promise.all([
     db.bill.findMany({ where: { createdAt: { gte: startOfToday, lte: endOfToday } } }),
     db.payment.findMany({
       where: { createdAt: { gte: startOfToday, lte: endOfToday } },
@@ -21,8 +21,8 @@ export async function GET() {
     db.patient.count(),
     db.doctor.count(),
     db.staff.count(),
-    db.bill.findMany({ where: { status: { not: 'cancelled' } } }),
-    db.bill.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
+    db.bill.aggregate({ _sum: { paidAmount: true }, where: { status: { not: 'cancelled' } } }),
+    db.bill.aggregate({ _sum: { balanceAmount: true }, where: { status: { in: ['pending', 'partial'] } } }),
     db.order.findMany({ where: { createdAt: { gte: startOfToday, lte: endOfToday } } }),
   ])
 
@@ -30,8 +30,8 @@ export async function GET() {
   const totalCollectedToday = paymentsToday.filter((p) => p.amount > 0).reduce((s, p) => s + p.amount, 0)
   const totalRefundsToday = paymentsToday.filter((p) => p.amount < 0).reduce((s, p) => s + Math.abs(p.amount), 0)
   const totalExpensesToday = expensesToday.reduce((s, e) => s + e.amount, 0)
-  const totalDue = pendingBills.reduce((s, b) => s + b.balanceAmount, 0)
-  const totalRevenue = billsAll.reduce((s, b) => s + b.paidAmount, 0)
+  const totalDue = dueAgg._sum.balanceAmount || 0
+  const totalRevenue = revenueAgg._sum.paidAmount || 0
 
   // Method breakdown today
   const byMethod: Record<string, number> = {}
@@ -41,22 +41,31 @@ export async function GET() {
     }
   }
 
-  // Last 7 days revenue trend
-  const trend: Array<{ date: string; revenue: number; bills: number }> = []
-  for (let i = 6; i >= 0; i--) {
+  // Last 7 days revenue trend — run all day queries in parallel with aggregates
+  const trendDays = Array.from({ length: 7 }, (_, idx) => {
+    const i = 6 - idx
     const d = new Date()
     d.setDate(d.getDate() - i)
     const label = istDateLabel(d)
-    const s = new Date(label + 'T00:00:00+05:30')
-    const e = new Date(label + 'T23:59:59+05:30')
-    const dayBills = await db.bill.findMany({ where: { createdAt: { gte: s, lte: e }, status: { not: 'cancelled' } } })
-    const dayPayments = await db.payment.findMany({ where: { createdAt: { gte: s, lte: e }, amount: { gt: 0 } } })
-    trend.push({
-      date: label,
-      revenue: dayPayments.reduce((sum, p) => sum + p.amount, 0),
-      bills: dayBills.length,
+    return {
+      label,
+      s: new Date(label + 'T00:00:00+05:30'),
+      e: new Date(label + 'T23:59:59+05:30'),
+    }
+  })
+  const trend = await Promise.all(
+    trendDays.map(async ({ label, s, e }) => {
+      const [billsCount, revenueAggDay] = await Promise.all([
+        db.bill.count({ where: { createdAt: { gte: s, lte: e }, status: { not: 'cancelled' } } }),
+        db.payment.aggregate({ _sum: { amount: true }, where: { createdAt: { gte: s, lte: e }, amount: { gt: 0 } } }),
+      ])
+      return {
+        date: label,
+        revenue: revenueAggDay._sum.amount || 0,
+        bills: billsCount,
+      }
     })
-  }
+  )
 
   return NextResponse.json({
     today: {

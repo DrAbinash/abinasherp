@@ -32,7 +32,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Cannot promote to super_admin' }, { status: 403 })
   }
 
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   if (name !== undefined) update.name = name
   if (email !== undefined) update.email = (email as string).toLowerCase()
   if (username !== undefined) update.username = username

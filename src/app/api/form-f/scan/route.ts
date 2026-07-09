@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const imageUrl = `data:${file.type};base64,${base64}`
 
   const zai = await ZAI.create()
-  const response = await zai.chat.completions.createVision({
+  const response = await (zai.chat.completions.createVision as any)({
     messages: [
       {
         role: 'system',

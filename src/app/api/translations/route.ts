@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const q = searchParams.get('q') || ''
 
-  const where: Record<string, unknown> = {}
-  if (q) where.key = { contains: q }
+  const where: any = {}
+  if (q) where.key = { contains: q, mode: 'insensitive' as const }
 
   const translations = await db.translation.findMany({
     where,

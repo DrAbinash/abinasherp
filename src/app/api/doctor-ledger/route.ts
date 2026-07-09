@@ -15,6 +15,13 @@ export async function GET(req: NextRequest) {
   const clinic = await db.clinic.findFirst()
   const commissionDiscountMode = clinic?.commissionDiscountMode || 'none'
 
+  // Push the date window into the DB query instead of filtering in JS.
+  const billCreatedAt: { gte?: Date; lte?: Date } = {}
+  if (from) billCreatedAt.gte = new Date(from + 'T00:00:00+05:30')
+  if (to) billCreatedAt.lte = new Date(to + 'T23:59:59+05:30')
+  const billWhere: Record<string, unknown> = { status: { in: ['paid', 'partial'] } }
+  if (from || to) billWhere.createdAt = billCreatedAt
+
   const doctors = await db.doctor.findMany({
     include: {
       commissionRules: true,
@@ -23,7 +30,7 @@ export async function GET(req: NextRequest) {
         include: {
           orderTests: { include: { test: { include: { category: true } } } },
           bills: {
-            where: { status: { in: ['paid', 'partial'] } },
+            where: billWhere,
           },
         },
       },

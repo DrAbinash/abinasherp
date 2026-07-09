@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   const category = searchParams.get('category') || ''
 
-  const where: Record<string, unknown> = {}
-  if (q) where.OR = [{ name: { contains: q } }, { testName: { contains: q } }]
+  const where: any = {}
+  if (q) where.OR = [{ name: { contains: q, mode: 'insensitive' as const } }, { testName: { contains: q, mode: 'insensitive' as const } }]
   if (category) where.category = category
 
   const templates = await db.reportTemplate.findMany({
