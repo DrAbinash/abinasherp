@@ -1370,3 +1370,235 @@ model DailySummaryLog {
   sentAt          DateTime?
   createdAt       DateTime @default(now())
 }
+
+// ============================================================
+// PATIENT PORTAL (OTP-based self-service)
+// ============================================================
+model PatientOtp {
+  id              String   @id @default(cuid())
+  phone           String
+  code            String   // 6-digit OTP
+  purpose         String   @default("login") // login | payment
+  attempts        Int      @default(0)
+  verified        Boolean  @default(false)
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([phone])
+  @@index([code])
+}
+
+model PatientPortalSession {
+  id              String   @id @default(cuid())
+  token           String   @unique
+  patientId       String
+  patientName     String
+  patientPhone    String
+  ipAddress       String?
+  userAgent       String?
+  expiresAt       DateTime
+  lastActivityAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([patientId])
+  @@index([token])
+}
+
+// ============================================================
+// SAMPLE TRACKING (barcoded sample tubes)
+// ============================================================
+model Sample {
+  id              String   @id @default(cuid())
+  sampleId        String   @unique // S-YYYYMMDD-####
+  billId          String?
+  billNumber      String?
+  orderId         String?
+  orderTestId     String?
+  patientId       String?
+  patientName     String
+  patientPhone    String?
+  testName        String
+  testCode        String?
+  barcodeData     String   // The string encoded in the barcode (usually sampleId)
+  status          String   @default("pending") // pending | collected | in_transit | at_lab | processing | completed | discarded | rejected
+  collectedAt     DateTime?
+  collectedByName String?
+  dispatchedAt    DateTime?
+  dispatchedByName String?
+  receivedAtLabAt DateTime?
+  receivedByName  String?
+  processingStartedAt DateTime?
+  processingStartedByName String?
+  completedAt     DateTime?
+  discardedAt     DateTime?
+  discardReason   String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  notes           String?
+  containerType   String?  // e.g. EDTA, Citrate, Serum, Fluoride
+  priority        String   @default("normal") // normal | urgent | stat
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([billId])
+  @@index([patientId])
+  @@index([status])
+  @@index([sampleId])
+}
+
+model SampleCounter {
+  id              Int      @id @default(1)
+  dateStr         String   @unique // YYYYMMDD
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// HOME SAMPLE COLLECTION
+// ============================================================
+model HomeCollectionRequest {
+  id              String   @id @default(cuid())
+  requestId       String   @unique // HC-YYYYMMDD-####
+  patientName     String
+  patientPhone    String
+  patientEmail    String?
+  patientAge      Int?
+  patientGender   String?
+  address         String
+  city            String
+  state           String?
+  pincode         String
+  landmark        String?
+  latitude        Float?
+  longitude       Float?
+  testIds         String   // JSON array
+  testNames       String   // JSON array
+  packageId       String?
+  packageName     String?
+  preferredDate   String   // YYYY-MM-DD
+  preferredSlot   String   // morning | afternoon | evening
+  amount          Float    @default(0)
+  paymentStatus   String   @default("pending") // pending | paid | cod
+  paymentMethod   String?  // online | cod
+  status          String   @default("requested") // requested | assigned | en_route | collected | sample_at_lab | completed | cancelled
+  assignedPhlebotomistId String?
+  assignedPhlebotomistName String?
+  assignedAt      DateTime?
+  phlebotomistEnRouteAt DateTime?
+  phlebotomistCollectedAt DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  phlebotomistNotes String?
+  billId          String?  // once bill is created
+  sampleIds       String?  // JSON array of sample IDs created
+  source          String   @default("online") // online | phone | walk-in
+  ip              String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([patientPhone])
+  @@index([preferredDate])
+  @@index([assignedPhlebotomistId])
+}
+
+model HomeCollectionCounter {
+  id              Int      @id @default(1)
+  dateStr         String   @unique
+  counter         Int      @default(0)
+}
+
+// ============================================================
+// CORPORATE / TPA BILLING
+// ============================================================
+model Corporate {
+  id              String   @id @default(cuid())
+  corporateId     String   @unique // CORP-####
+  name            String
+  type            String   @default("corporate") // corporate | tpa | insurance
+  contactPerson   String?
+  phone           String?
+  email           String?
+  gstin           String?
+  pan             String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  creditTermsDays Int      @default(30) // payment due in N days
+  creditLimit     Float    @default(0) // 0 = unlimited
+  outstandingBalance Float  @default(0) // running balance
+  isActive        Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  rateCards       CorporateRateCard[]
+  patients        CorporatePatient[]
+  invoices        CorporateInvoice[]
+
+  @@index([name])
+  @@index([type])
+}
+
+model CorporateRateCard {
+  id              String   @id @default(cuid())
+  corporateId     String
+  testId          String
+  negotiatedPrice Float
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  corporate       Corporate @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@unique([corporateId, testId])
+  @@index([corporateId])
+}
+
+model CorporatePatient {
+  id              String   @id @default(cuid())
+  corporateId     String
+  patientId       String
+  employeeId      String?  // Employee ID at the corporate
+  relation        String   @default("self") // self | spouse | child | parent
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  corporate       Corporate @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@unique([corporateId, patientId])
+  @@index([corporateId])
+}
+
+model CorporateInvoice {
+  id              String   @id @default(cuid())
+  invoiceNumber   String   @unique // INV-CORP-YYYYMM-####
+  corporateId     String
+  corporateName   String
+  periodFrom      String   // YYYY-MM-DD
+  periodTo        String
+  totalAmount     Float    @default(0)
+  paidAmount      Float    @default(0)
+  billCount       Int      @default(0)
+  status          String   @default("raised") // raised | partial | paid | overdue
+  dueDate         String   // YYYY-MM-DD
+  generatedAt     DateTime @default(now())
+  paidAt          DateTime?
+  notes           String?
+  billIds         String?  // JSON array of bill IDs in this invoice
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  corporate       Corporate @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@index([corporateId])
+  @@index([status])
+}
+
+model CorporateInvoiceCounter {
+  id              Int      @id @default(1)
+  yearMonth       String   @unique
+  counter         Int      @default(0)
+}

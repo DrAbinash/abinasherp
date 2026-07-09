@@ -22,6 +22,7 @@ import { ReportsPage } from '@/components/pages/reports'
 import { PackagesPage } from '@/components/pages/packages'
 import { AppointmentsPage, NotificationsPage, BranchesPage, WhatsAppSettingsPage } from '@/components/pages/ops-pages'
 import { DailyCollectionPage, TdsReportsPage } from '@/components/pages/finance-reports'
+import { SamplesPage, HomeCollectionPage, CorporatePage } from '@/components/pages/advanced-pages'
 import { Button } from '@/components/ui/button'
 import { Database, Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/auth-context'
@@ -138,6 +139,9 @@ function PageRouter({ page }: { page: PageKey }) {
     case 'whatsapp-settings': return <WhatsAppSettingsPage />
     case 'daily-collection': return <DailyCollectionPage />
     case 'tds-reports': return <TdsReportsPage />
+    case 'samples': return <SamplesPage />
+    case 'home-collection': return <HomeCollectionPage />
+    case 'corporates': return <CorporatePage />
     default: return <DashboardPage />
   }
 }

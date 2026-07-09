@@ -196,5 +196,22 @@ export async function POST(req: NextRequest) {
     data: { status: 'completed' },
   })
 
-  return NextResponse.json({ bill })
+  // Auto-deduct inventory (fire-and-forget — never blocks billing)
+  let inventoryDeduction: { deducted: any[]; errors: string[] } | null = null
+  try {
+    const { autoDeductInventoryForBill } = await import('@/lib/inventory-auto-deduct')
+    inventoryDeduction = await autoDeductInventoryForBill(
+      bill.id,
+      bill.billNumber,
+      order.orderTests.map((ot) => ({ testId: ot.testId, testName: ot.test.name })),
+      session.name,
+    )
+    if (inventoryDeduction.errors.length > 0) {
+      console.warn('Inventory deduction errors:', inventoryDeduction.errors)
+    }
+  } catch (e) {
+    console.error('Auto-deduct inventory failed:', e)
+  }
+
+  return NextResponse.json({ bill, inventoryDeduction })
 }
