@@ -30,7 +30,7 @@ export async function PATCH(
   const { id } = await params
   const body = await req.json().catch(() => ({}))
 
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   const fields = [
     'name', 'model', 'manufacturer', 'serialNumber', 'category', 'location',
     'purchaseDate', 'amcVendor', 'amcStartDate', 'amcEndDate', 'amcContractNo',

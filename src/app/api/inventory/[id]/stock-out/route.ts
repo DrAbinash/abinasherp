@@ -57,7 +57,7 @@ export async function POST(
   ])
 
   // Low-stock alert check
-  let alert = null
+  let alert: { type: string; message: string; itemId: string } | null = null
   if (updatedItem.currentStock <= updatedItem.minStock) {
     alert = {
       type: 'low_stock',

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi, useAuth } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -109,7 +110,7 @@ function PatientReportsTab() {
                       <div className="flex gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => setEditReport(r)} title="Edit / Approve / Deliver"><FileEdit className="w-4 h-4" /></Button>
                         {r.status === 'approved' || r.status === 'delivered' ? (
-                          <Button size="sm" variant="ghost" onClick={() => window.open(`/api/patient-reports/${r.id}/pdf`, '_blank')} title="View PDF"><Printer className="w-4 h-4" /></Button>
+                          <Button size="sm" variant="ghost" onClick={() => window.open(apiPath(`/api/patient-reports/${r.id}/pdf`), '_blank')} title="View PDF"><Printer className="w-4 h-4" /></Button>
                         ) : null}
                       </div>
                     </TableCell>
@@ -274,7 +275,7 @@ function EditReportDialog({ report, onClose, onDone }: { report: any; onClose: (
   const deliver = async (method: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/patient-reports/${report.id}/deliver`, {
+      const res = await fetch(apiPath(`/api/patient-reports/${report.id}/deliver`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('care_erp_token') || ''}` },
         body: JSON.stringify({ method }),
@@ -338,7 +339,7 @@ function EditReportDialog({ report, onClose, onDone }: { report: any; onClose: (
             <Button variant="outline" size="sm" onClick={() => deliver('email')} disabled={loading}>
               <Mail className="w-4 h-4 mr-1" /> Email
             </Button>
-            <Button variant="outline" size="sm" onClick={() => window.open(`/api/patient-reports/${report.id}/pdf`, '_blank')}>
+            <Button variant="outline" size="sm" onClick={() => window.open(apiPath(`/api/patient-reports/${report.id}/pdf`), '_blank')}>
               <Printer className="w-4 h-4 mr-1" /> Print
             </Button>
           </>

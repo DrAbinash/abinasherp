@@ -1,53 +1,61 @@
-# Care ERP — Synology NAS Deployment via Docker Compose
-# Place this file in /volume1/docker/care-erp/docker-compose.yml on your Synology NAS
-# Then run: docker compose up -d
+# Care ERP — Synology Container Manager deployment (PostgreSQL)
+#
+# 1. Create a project folder, e.g. /volume1/docker/care-erp/
+# 2. Put this file + the whole repo there, and copy `env.example` to `env`,
+#    editing the secrets inside.
+# 3. In Container Manager: Project → Create → select this folder → Build.
+#
+# The app is served under the /erp sub-path (NEXT_PUBLIC_BASE_PATH). Point a DSM
+# reverse-proxy rule at http://<nas-ip>:3000 for the source path /erp.
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: care-erp-db
+    restart: unless-stopped
+    env_file:
+      - ./env
+    volumes:
+      # Named volume — database survives container/image rebuilds
+      - care-erp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # DB is not published to the LAN — only the app container reaches it.
+    expose:
+      - "5432"
+
   care-erp:
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into the client bundle — must equal the reverse-proxy sub-path.
+        NEXT_PUBLIC_BASE_PATH: /erp
     image: care-erp:latest
     container_name: care-erp
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3000:3000"
+    env_file:
+      - ./env
     volumes:
-      # Persistent SQLite database — survives container updates
-      - care-erp-data:/app/data
       # Persistent uploaded files (expense bills, bank statements)
       - care-erp-uploads:/app/uploads
-      # Optional: mount a custom .env file for production settings
-      - ./env:/app/.env:ro
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/care-erp.db
-      # Bootstrap super-admin (only used on first run when DB is empty)
-      - BOOTSTRAP_ADMIN_EMAIL=admin@yourclinic.com
-      - BOOTSTRAP_ADMIN_NAME=Clinic Administrator
-      - BOOTSTRAP_ADMIN_PIN=ChangeMe123!
-      - CLINIC_NAME=Care Diagnostic Centre
-      # Optional: USB-key gating for super-admin (leave blank to disable)
-      # - SUPER_ADMIN_USB_KEY=your-secret-usb-key-content
-      # - SUPER_ADMIN_USB_PIN=your-usb-pin
-      # Session timeouts
-      - NEXTAUTH_URL=http://your-synology-ip:3000
-      - NEXTAUTH_SECRET=please-change-this-to-a-random-32-char-string
-      # ============================================================
-      # ICICI Orange Pay (online booking payments)
-      # ⚠️ PUBLIC_BASE_URL host MUST be whitelisted in ICICI merchant dashboard
-      # ============================================================
-      - ICICI_MERCHANT_ID=${ICICI_MERCHANT_ID:-}
-      - ICICI_AGGREGATOR_ID=${ICICI_AGGREGATOR_ID:-}
-      - ICICI_SECRET_KEY=${ICICI_SECRET_KEY:-}
-      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:3000}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/erp/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 
 volumes:
-  care-erp-data:
+  care-erp-pgdata:
     driver: local
   care-erp-uploads:
     driver: local

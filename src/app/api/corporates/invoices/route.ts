@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const corporateId = searchParams.get('corporateId') || ''
   const status = searchParams.get('status') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (corporateId) where.corporateId = corporateId
   if (status) where.status = status
 

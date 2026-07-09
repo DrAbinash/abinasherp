@@ -13,14 +13,14 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get('date') || ''
   const q = searchParams.get('q') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
   if (date) where.preferredDate = date
   if (q) {
     where.OR = [
-      { patientName: { contains: q } },
-      { patientPhone: { contains: q } },
-      { requestId: { contains: q } },
+      { patientName: { contains: q, mode: 'insensitive' as const } },
+      { patientPhone: { contains: q, mode: 'insensitive' as const } },
+      { requestId: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

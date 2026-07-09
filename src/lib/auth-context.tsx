@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
+import { apiPath } from '@/lib/base-path'
 
 export interface AuthUser {
   id: string
@@ -36,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchMe = useCallback(async (tok: string) => {
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(apiPath('/api/auth/me'), {
         headers: { Authorization: `Bearer ${tok}` },
       })
       if (!res.ok) {
@@ -68,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (name: string, pin: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(apiPath('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, pin }),
@@ -89,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     if (token) {
       try {
-        await fetch('/api/auth/me', {
+        await fetch(apiPath('/api/auth/me'), {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -103,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const changePin = useCallback(async (currentPin: string, newPin: string) => {
     if (!token) return { ok: false, error: 'Not logged in' }
     try {
-      const res = await fetch('/api/auth/change-pin', {
+      const res = await fetch(apiPath('/api/auth/change-pin'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -142,12 +143,12 @@ export function useApi() {
   const { token } = useAuth()
   return {
     get: async (path: string) => {
-      const res = await fetch(path, { headers: { Authorization: `Bearer ${token || ''}` } })
+      const res = await fetch(apiPath(path), { headers: { Authorization: `Bearer ${token || ''}` } })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed')
       return res.json()
     },
     post: async (path: string, body?: unknown) => {
-      const res = await fetch(path, {
+      const res = await fetch(apiPath(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
         body: body ? JSON.stringify(body) : undefined,
@@ -157,7 +158,7 @@ export function useApi() {
       return data
     },
     put: async (path: string, body?: unknown) => {
-      const res = await fetch(path, {
+      const res = await fetch(apiPath(path), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
         body: body ? JSON.stringify(body) : undefined,
@@ -167,7 +168,7 @@ export function useApi() {
       return data
     },
     patch: async (path: string, body?: unknown) => {
-      const res = await fetch(path, {
+      const res = await fetch(apiPath(path), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
         body: body ? JSON.stringify(body) : undefined,
@@ -177,7 +178,7 @@ export function useApi() {
       return data
     },
     del: async (path: string) => {
-      const res = await fetch(path, {
+      const res = await fetch(apiPath(path), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token || ''}` },
       })

@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     // Extract text from PDF
     let pdfText = ''
     try {
-      const pdfParse = (await import('pdf-parse')).default
+      const pdfParse = ((await import('pdf-parse')) as any).default
       const pdfData = await pdfParse(fileBuffer)
       pdfText = pdfData.text
     } catch (e) {
@@ -118,7 +118,7 @@ Return ONLY valid JSON, no markdown fences.`,
   fs.writeFileSync(filePath, fileBuffer)
 
   const zai = await ZAI.create()
-  const response = await zai.chat.completions.createVision({
+  const response = await (zai.chat.completions.createVision as any)({
     messages: [
       {
         role: 'system',

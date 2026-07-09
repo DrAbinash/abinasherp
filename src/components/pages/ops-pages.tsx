@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -440,7 +441,7 @@ export function WhatsAppSettingsPage() {
     if (!testPhone) { toast.error('Enter test phone number'); return }
     setTesting(true)
     try {
-      const res = await fetch('/api/whatsapp/test', {
+      const res = await fetch(apiPath('/api/whatsapp/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('care_erp_token') || ''}` },
         body: JSON.stringify({ to: testPhone }),

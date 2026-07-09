@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { getStaffSession } from '@/lib/session'
-import fs from 'fs'
+import { spawn } from 'child_process'
+import { writeFileSync, unlinkSync } from 'fs'
+import { tmpdir } from 'os'
 import path from 'path'
 
-function getDbPath(): string {
-  return (process.env.DATABASE_URL || '').replace(/^file:/, '')
-}
-
-const SQLITE_HEADER = Buffer.from('SQLite format 3\0')
-
+// POST /api/backup/restore — owner-only restore of a PostgreSQL plain-SQL dump
+// produced by /api/backup/download. Streams the uploaded .sql into psql.
+// Requires the `psql` binary (postgresql-client) in the runtime image.
 export async function POST(req: NextRequest) {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -17,43 +15,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden: owner role required' }, { status: 403 })
   }
 
+  const dbUrl = process.env.DATABASE_URL || ''
+  if (!dbUrl.startsWith('postgres')) {
+    return NextResponse.json({ error: 'Restore requires a PostgreSQL DATABASE_URL' }, { status: 500 })
+  }
+
   const formData = await req.formData()
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file uploaded (field name: file)' }, { status: 400 })
-
-  if (file.size > 200 * 1024 * 1024) {
-    return NextResponse.json({ error: 'File too large (max 200MB)' }, { status: 400 })
+  if (file.size > 500 * 1024 * 1024) {
+    return NextResponse.json({ error: 'File too large (max 500MB)' }, { status: 400 })
   }
 
-  const bytes = await file.arrayBuffer()
-  const buf = Buffer.from(bytes)
-
-  if (buf.length < 16 || buf.subarray(0, 16).toString('binary') !== SQLITE_HEADER.toString('binary')) {
-    return NextResponse.json({ error: 'Invalid SQLite file: missing SQLite header' }, { status: 400 })
+  const text = await file.text()
+  // Sanity-check it looks like a pg_dump plain-SQL file.
+  if (!/CREATE TABLE|COPY |INSERT INTO|pg_dump/i.test(text.slice(0, 5000))) {
+    return NextResponse.json({ error: 'File does not look like a PostgreSQL SQL dump' }, { status: 400 })
   }
 
-  const dbPath = getDbPath()
-  if (!dbPath || !fs.existsSync(dbPath)) {
-    return NextResponse.json({ error: 'Current database file not found' }, { status: 500 })
-  }
-
-  const backupPath = `${dbPath}.bak-${Date.now()}`
-  fs.copyFileSync(dbPath, backupPath)
-
+  const tmpFile = path.join(tmpdir(), `care-erp-restore-${Date.now()}.sql`)
   try {
-    await db.$disconnect()
-  } catch {
-    // ignore disconnect errors
+    writeFileSync(tmpFile, text)
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', tmpFile], { env: process.env })
+      let stderr = ''
+      child.stderr.on('data', (d) => { stderr += d.toString() })
+      child.on('error', reject)
+      child.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(stderr || `psql exited with code ${code}`))
+      })
+    })
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Database restored successfully. Restart the application if data looks stale.',
+      restoredFrom: file.name,
+      sizeBytes: text.length,
+    })
+  } catch (e: unknown) {
+    console.error('[backup/restore] psql failed:', e)
+    return NextResponse.json({ error: 'Restore failed. The dump may be incompatible or the database unreachable.' }, { status: 500 })
+  } finally {
+    try { unlinkSync(tmpFile) } catch { /* ignore */ }
   }
-
-  fs.writeFileSync(dbPath, buf)
-
-  return NextResponse.json({
-    ok: true,
-    message: 'Database restored successfully. Please restart the application to apply changes.',
-    restoredFrom: file.name,
-    sizeBytes: buf.length,
-    backupPath,
-    warning: 'A backup of the previous database was saved. The application should be restarted.',
-  })
 }

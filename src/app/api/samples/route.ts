@@ -14,15 +14,15 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   const limit = parseInt(searchParams.get('limit') || '100')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
   if (billId) where.billId = billId
   if (q) {
     where.OR = [
-      { sampleId: { contains: q } },
-      { patientName: { contains: q } },
-      { patientPhone: { contains: q } },
-      { billNumber: { contains: q } },
+      { sampleId: { contains: q, mode: 'insensitive' as const } },
+      { patientName: { contains: q, mode: 'insensitive' as const } },
+      { patientPhone: { contains: q, mode: 'insensitive' as const } },
+      { billNumber: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

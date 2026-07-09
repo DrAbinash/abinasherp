@@ -109,7 +109,7 @@ export async function PUT(req: NextRequest) {
     if (tx.description) {
       const m = tx.description.match(/(?:BILL|INV|ORD)[\s-]*([A-Z0-9-]+)/i)
       if (m) {
-        const bill = await db.bill.findFirst({ where: { billNumber: { contains: m[1] } } })
+        const bill = await db.bill.findFirst({ where: { billNumber: { contains: m[1], mode: 'insensitive' as const } } })
         if (bill) {
           await db.reconciliationLog.create({
             data: {

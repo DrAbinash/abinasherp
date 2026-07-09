@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -227,7 +228,7 @@ function PatientDetail({ patient, onBack }: { patient: any; onBack: () => void }
                       }>{r.status.replace('_', ' ')}</Badge></TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="ghost" onClick={() => {
-                          const w = window.open(`/api/patient-reports/${r.id}/pdf`, '_blank')
+                          const w = window.open(apiPath(`/api/patient-reports/${r.id}/pdf`), '_blank')
                           if (!w) toast.error('Popup blocked — allow popups to view PDF')
                         }}>
                           <Download className="w-4 h-4" />

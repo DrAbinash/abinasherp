@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const reconciliationStatus = searchParams.get('reconciliationStatus') || ''
   const limit = parseInt(searchParams.get('limit') || '100')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
   if (accountId) where.bankAccountId = accountId
   if (reconciliationStatus) where.reconciliationStatus = reconciliationStatus

@@ -14,11 +14,11 @@ export async function GET(req: NextRequest) {
   if (status) where.status = status
   if (q) {
     where.OR = [
-      { name: { contains: q } },
-      { equipmentId: { contains: q } },
-      { manufacturer: { contains: q } },
-      { serialNumber: { contains: q } },
-      { model: { contains: q } },
+      { name: { contains: q, mode: 'insensitive' as const } },
+      { equipmentId: { contains: q, mode: 'insensitive' as const } },
+      { manufacturer: { contains: q, mode: 'insensitive' as const } },
+      { serialNumber: { contains: q, mode: 'insensitive' as const } },
+      { model: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

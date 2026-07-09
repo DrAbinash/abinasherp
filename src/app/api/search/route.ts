@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   if (!q || q.length < 1) return NextResponse.json({ results: {} })
 
-  const filter = { contains: q }
+  const filter = { contains: q, mode: 'insensitive' as const }
 
   const [patients, doctors, bills, orders, vouchers, suppliers, staff] = await Promise.all([
     db.patient.findMany({ where: { OR: [{ name: filter }, { phone: filter }, { patientId: filter }] }, take: 5 }),

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -556,7 +557,7 @@ function StatementsTab() {
       fd.append('file', file)
       fd.append('bankAccountId', bankAccountId)
       const token = localStorage.getItem('care_erp_token') || ''
-      const res = await fetch('/api/banking/statements/upload', {
+      const res = await fetch(apiPath('/api/banking/statements/upload'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -576,7 +577,7 @@ function StatementsTab() {
     setImporting(true)
     try {
       const token = localStorage.getItem('care_erp_token') || ''
-      const res = await fetch('/api/banking/statements/upload', {
+      const res = await fetch(apiPath('/api/banking/statements/upload'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({

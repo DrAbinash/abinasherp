@@ -12,13 +12,13 @@ export async function GET(req: NextRequest) {
   const page = parseInt(searchParams.get('page') || '1')
   const pageSize = parseInt(searchParams.get('pageSize') || '50')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (tier) where.tier = tier
   if (q) {
     where.OR = [
-      { patientName: { contains: q } },
-      { patientPhone: { contains: q } },
-      { patientId: { contains: q } },
+      { patientName: { contains: q, mode: 'insensitive' as const } },
+      { patientPhone: { contains: q, mode: 'insensitive' as const } },
+      { patientId: { contains: q, mode: 'insensitive' as const } },
     ]
   }
 

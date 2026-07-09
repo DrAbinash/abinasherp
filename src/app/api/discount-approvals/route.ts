@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
 
   const approvals = await db.discountApproval.findMany({

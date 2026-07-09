@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -113,7 +114,7 @@ export function SamplesPage() {
                     <TableCell className="text-xs">{formatDateTime(s.updatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button size="sm" variant="ghost" onClick={() => window.open(`/api/samples/${s.id}/barcode`, '_blank')} title="View Barcode"><QrCode className="w-4 h-4" /></Button>
+                        <Button size="sm" variant="ghost" onClick={() => window.open(apiPath(`/api/samples/${s.id}/barcode`), '_blank')} title="View Barcode"><QrCode className="w-4 h-4" /></Button>
                         <Select onValueChange={(v) => updateStatus(s.id, v)}>
                           <SelectTrigger className="w-32 h-8 text-xs"><SelectValue placeholder="Update" /></SelectTrigger>
                           <SelectContent>

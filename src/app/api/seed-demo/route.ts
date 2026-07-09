@@ -8,6 +8,10 @@ import { bootstrapAdminIfNeeded, seedDefaultAccounts } from '@/lib/seed'
 export async function POST() {
   const session = await getStaffSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session.isOwner) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Demo seeding disabled in production' }, { status: 403 })
+  }
 
   await bootstrapAdminIfNeeded()
   await seedDefaultAccounts()

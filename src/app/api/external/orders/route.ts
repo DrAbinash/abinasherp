@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   let doctorId: string | null = null
   if (doctorName) {
-    const doctor = await db.doctor.findFirst({ where: { name: { contains: doctorName } } })
+    const doctor = await db.doctor.findFirst({ where: { name: { contains: doctorName, mode: 'insensitive' as const } } })
     if (doctor) doctorId = doctor.id
   }
 

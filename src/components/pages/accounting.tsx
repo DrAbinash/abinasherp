@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi, useAuth } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -46,7 +47,7 @@ export function AccountingPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.open(`/api/accounting/export/tally-erp9`, '_blank')}
+            onClick={() => window.open(apiPath(`/api/accounting/export/tally-erp9`), '_blank')}
             className="border-blue-300 text-blue-700 hover:bg-blue-50"
           >
             <Download className="w-4 h-4 mr-1" /> Tally ERP 9
@@ -56,7 +57,7 @@ export function AccountingPage() {
             size="sm"
             onClick={() => {
               // Fetch with auth header (browsers block custom headers on window.open)
-              fetch('/api/accounting/export/tally-prime', { headers: { Authorization: `Bearer ${token}` } })
+              fetch(apiPath('/api/accounting/export/tally-prime'), { headers: { Authorization: `Bearer ${token}` } })
                 .then((r) => r.blob())
                 .then((b) => {
                   const url = URL.createObjectURL(b)

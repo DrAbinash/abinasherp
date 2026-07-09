@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status') || ''
   const limit = parseInt(searchParams.get('limit') || '100')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (status) where.status = status
 
   const logs = await db.emailLog.findMany({

@@ -90,32 +90,57 @@ async function processWebhook(body: any, ip: string) {
     return
   }
 
-  // Idempotency: skip if already paid/confirmed
-  if (booking.status === 'paid' || booking.status === 'confirmed') {
-    return
-  }
-
   if (isSuccess) {
-    // Mark as paid
-    await db.onlineBooking.update({
-      where: { id: booking.id },
+    // AMOUNT RECONCILIATION: never confirm a payment whose amount does not match
+    // the booking. Only enforce when the gateway actually sent an amount.
+    if (amount !== null && Math.abs(amount - booking.amount) > 0.01) {
+      const errorMessage = `Amount mismatch: expected ${booking.amount} got ${amount}`
+      await db.paymentGatewayDiagnostic.create({
+        data: { ...diagBase, success: false, responseCode: txnStatus, errorMessage },
+      }).catch(() => {})
+
+      // Flag (do NOT confirm) — atomic so we never clobber an already-paid booking
+      await db.onlineBooking.updateMany({
+        where: { id: booking.id, status: { notIn: ['paid', 'confirmed'] } },
+        data: {
+          status: 'amount_mismatch',
+          iciciTransactionId: txnId,
+          iciciResponseCode: txnStatus,
+          iciciResponseMsg: errorMessage,
+        },
+      })
+      console.error(`✗ ICICI ${errorMessage} for booking ${merchantTxnNo}`)
+      return
+    }
+
+    // ATOMIC IDEMPOTENCY GUARD: flip to paid only if not already paid/confirmed.
+    // A concurrent (double-delivered) webhook loses the race and gets count === 0,
+    // so the follow-up runs exactly once.
+    const result = await db.onlineBooking.updateMany({
+      where: { id: booking.id, status: { notIn: ['paid', 'confirmed'] } },
       data: {
         status: 'paid',
         iciciTransactionId: txnId,
         iciciResponseCode: txnStatus,
-        iciciResponseMsg: body.respDescription || 'Payment successful',
+        iciciResponseMsg:
+          body.respDescription ||
+          (amount === null ? 'Payment successful (gateway omitted amount)' : 'Payment successful'),
         paymentCompletedAt: new Date(),
         paymentMethod: body.paymentMethod || 'online',
       },
     })
+    if (result.count !== 1) {
+      // Already paid/confirmed (or won by a concurrent delivery) — do not process twice
+      return
+    }
 
     // TODO: In production, create a Patient + Order + Bill here automatically
     // For now we leave that for the front desk to do when patient arrives
     console.log(`✓ ICICI payment confirmed for booking ${merchantTxnNo}, txnId=${txnId}`)
   } else {
-    // Payment failed
-    await db.onlineBooking.update({
-      where: { id: booking.id },
+    // Payment failed — guard so we never overwrite an already-paid/confirmed booking
+    await db.onlineBooking.updateMany({
+      where: { id: booking.id, status: { notIn: ['paid', 'confirmed'] } },
       data: {
         status: 'failed',
         iciciResponseCode: txnStatus,

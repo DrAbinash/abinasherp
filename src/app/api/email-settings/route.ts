@@ -24,7 +24,7 @@ export async function PUT(req: NextRequest) {
   if (!session.isOwner) return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   const allowed = [
     'smtpHost', 'smtpPort', 'smtpUser', 'smtpPassword', 'smtpSecure',
     'fromAddress', 'fromName', 'adminEmail', 'extraRecipients',

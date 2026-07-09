@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   }).catch(() => {})
 
   // Look up the booking to show patient details
-  let booking = null
+  let booking: any = null
   if (merchantTxnNo) {
     booking = await db.onlineBooking.findFirst({
       where: { bookingRef: merchantTxnNo },
@@ -56,26 +56,46 @@ export async function GET(req: NextRequest) {
       if (creds) {
         const statusResult = await checkStatus(merchantTxnNo, creds)
         if (statusResult.success) {
-          // Mark as paid (idempotent — webhook may also do this)
-          await db.onlineBooking.update({
-            where: { id: booking.id },
-            data: {
-              status: 'paid',
-              iciciTransactionId: statusResult.txnId || txnId,
-              iciciResponseCode: statusResult.responseCode || txnStatus,
-              iciciResponseMsg: statusResult.respDescription,
-              paymentCompletedAt: new Date(),
-              paymentMethod: 'online',
-            },
-          }).catch(() => {})
+          // AMOUNT RECONCILIATION: only confirm if the gateway's amount matches
+          // the booking (when the gateway reports one).
+          const statusAmount =
+            statusResult.raw?.amount != null ? parseFloat(String(statusResult.raw.amount)) : null
+          if (statusAmount !== null && Math.abs(statusAmount - booking.amount) > 0.01) {
+            // Flag mismatch (do NOT confirm) — atomic guard
+            await db.onlineBooking.updateMany({
+              where: { id: booking.id, status: { notIn: ['paid', 'confirmed'] } },
+              data: {
+                status: 'amount_mismatch',
+                iciciResponseCode: statusResult.responseCode || txnStatus,
+                iciciResponseMsg: `Amount mismatch: expected ${booking.amount} got ${statusAmount}`,
+              },
+            }).catch(() => {})
+          } else {
+            // Mark as paid — atomic idempotency guard (webhook may also do this)
+            await db.onlineBooking.updateMany({
+              where: { id: booking.id, status: { notIn: ['paid', 'confirmed'] } },
+              data: {
+                status: 'paid',
+                iciciTransactionId: statusResult.txnId || txnId,
+                iciciResponseCode: statusResult.responseCode || txnStatus,
+                iciciResponseMsg: statusResult.respDescription,
+                paymentCompletedAt: new Date(),
+                paymentMethod: 'online',
+              },
+            }).catch(() => {})
+          }
           booking = await db.onlineBooking.findFirst({ where: { bookingRef: merchantTxnNo } })
         }
       }
     } catch (e) { /* ignore — webhook will handle */ }
   }
 
+  // SUCCESS shown to the patient is derived from the persisted booking status
+  // (source of truth), NOT the forgeable `txnStatus` query param.
+  const confirmed = !!(booking && (booking.status === 'paid' || booking.status === 'confirmed'))
+
   // Render HTML response for the patient
-  const html = renderCallbackPage(isSuccess, booking, merchantTxnNo, txnId, txnStatus)
+  const html = renderCallbackPage(confirmed, booking, merchantTxnNo, txnId, txnStatus)
   return new NextResponse(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })

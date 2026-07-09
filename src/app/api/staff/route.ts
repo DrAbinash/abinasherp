@@ -12,13 +12,13 @@ export async function GET(req: NextRequest) {
   const role = searchParams.get('role') || ''
   const isActive = searchParams.get('isActive')
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (q) {
     where.OR = [
-      { firstName: { contains: q } },
-      { lastName: { contains: q } },
-      { staffId: { contains: q } },
-      { phone: { contains: q } },
+      { firstName: { contains: q, mode: 'insensitive' as const } },
+      { lastName: { contains: q, mode: 'insensitive' as const } },
+      { staffId: { contains: q, mode: 'insensitive' as const } },
+      { phone: { contains: q, mode: 'insensitive' as const } },
     ]
   }
   if (role) where.role = role

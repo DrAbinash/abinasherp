@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const commissionDiscountMode = clinic?.commissionDiscountMode || 'none'
 
   // Get all paid/completed bills in window
-  const billWhere: Record<string, unknown> = { status: { in: ['paid', 'partial'] } }
+  const billWhere: any = { status: { in: ['paid', 'partial'] } }
   if (from || to) {
     billWhere.createdAt = {}
     if (from) billWhere.createdAt.gte = new Date(from + 'T00:00:00+05:30')

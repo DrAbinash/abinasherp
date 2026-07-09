@@ -20,22 +20,7 @@ export async function PUT(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const { name, address, phone, email, gstin, registrationNo, currency, commissionDiscountMode, vipPercentage, sessionIdleTimeoutMinutes } = body
 
-  const existing = await db.clinic.findFirst()
-  if (!existing) {
-    const clinic = await db.clinic.create({
-      data: {
-        name: name || 'Care Diagnostic Centre',
-        address, phone, email, gstin, registrationNo,
-        currency: currency || 'INR',
-        commissionDiscountMode: commissionDiscountMode || 'none',
-        vipPercentage: parseFloat(vipPercentage || '50'),
-        sessionIdleTimeoutMinutes: parseInt(sessionIdleTimeoutMinutes || '30'),
-      },
-    })
-    return NextResponse.json({ clinic })
-  }
-
-  const update: Record<string, unknown> = {}
+  const update: any = {}
   if (name !== undefined) update.name = name
   if (address !== undefined) update.address = address
   if (phone !== undefined) update.phone = phone
@@ -47,6 +32,19 @@ export async function PUT(req: NextRequest) {
   if (vipPercentage !== undefined) update.vipPercentage = parseFloat(vipPercentage)
   if (sessionIdleTimeoutMinutes !== undefined) update.sessionIdleTimeoutMinutes = parseInt(sessionIdleTimeoutMinutes)
 
-  const clinic = await db.clinic.update({ where: { id: existing.id }, data: update })
+  // Race-safe get-or-create: the unique `singleton` column guarantees one row.
+  const clinic = await db.clinic.upsert({
+    where: { singleton: 'clinic' },
+    update,
+    create: {
+      singleton: 'clinic',
+      name: name || 'Care Diagnostic Centre',
+      address, phone, email, gstin, registrationNo,
+      currency: currency || 'INR',
+      commissionDiscountMode: commissionDiscountMode || 'none',
+      vipPercentage: parseFloat(vipPercentage || '50'),
+      sessionIdleTimeoutMinutes: parseInt(sessionIdleTimeoutMinutes || '30'),
+    },
+  })
   return NextResponse.json({ clinic })
 }

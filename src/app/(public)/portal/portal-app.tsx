@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,7 +33,7 @@ export function PortalApp() {
 
   const fetchPatient = async (t: string) => {
     try {
-      const res = await fetch('/api/portal/me', { headers: { Authorization: `Bearer ${t}` } })
+      const res = await fetch(apiPath('/api/portal/me'), { headers: { Authorization: `Bearer ${t}` } })
       if (!res.ok) {
         localStorage.removeItem(PORTAL_TOKEN_KEY)
         setToken(null)
@@ -47,7 +48,7 @@ export function PortalApp() {
 
   const logout = async () => {
     if (token) {
-      fetch('/api/portal/me', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+      fetch(apiPath('/api/portal/me'), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
     }
     localStorage.removeItem(PORTAL_TOKEN_KEY)
     setToken(null)
@@ -126,7 +127,7 @@ function LoginScreen({ onLogin }: { onLogin: (token: string, patient: any, summa
     if (!phone || phone.length < 10) { toast.error('Enter valid phone number'); return }
     setLoading(true)
     try {
-      const res = await fetch('/api/portal/otp/send', {
+      const res = await fetch(apiPath('/api/portal/otp/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
@@ -143,7 +144,7 @@ function LoginScreen({ onLogin }: { onLogin: (token: string, patient: any, summa
     if (!otp || otp.length !== 6) { toast.error('Enter 6-digit OTP'); return }
     setLoading(true)
     try {
-      const res = await fetch('/api/portal/otp/verify', {
+      const res = await fetch(apiPath('/api/portal/otp/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, code: otp }),
@@ -153,7 +154,7 @@ function LoginScreen({ onLogin }: { onLogin: (token: string, patient: any, summa
       localStorage.setItem(PORTAL_TOKEN_KEY, data.token)
       toast.success(`Welcome, ${data.patient.name}`)
       // Fetch summary
-      const meRes = await fetch('/api/portal/me', { headers: { Authorization: `Bearer ${data.token}` } })
+      const meRes = await fetch(apiPath('/api/portal/me'), { headers: { Authorization: `Bearer ${data.token}` } })
       const meData = await meRes.json()
       onLogin(data.token, data.patient, meData.summary)
     } catch (e: any) { toast.error(e.message) } finally { setLoading(false) }
@@ -214,7 +215,7 @@ function ReportsTab({ token, patientId }: { token: string; patientId: string }) 
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/portal/reports', { headers: { Authorization: `Bearer ${token}` } })
+    fetch(apiPath('/api/portal/reports'), { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => { setReports(d.reports || []); setLoading(false) })
       .catch(() => setLoading(false))
@@ -245,7 +246,7 @@ function ReportsTab({ token, patientId }: { token: string; patientId: string }) 
                 <TableCell className="text-xs">{formatDate(r.createdAt)}</TableCell>
                 <TableCell><Badge variant="outline" className="bg-emerald-50 text-emerald-700">{r.status}</Badge></TableCell>
                 <TableCell className="text-right">
-                  <Button size="sm" variant="outline" onClick={() => window.open(`/api/patient-reports/${r.id}/pdf`, '_blank')}>
+                  <Button size="sm" variant="outline" onClick={() => window.open(apiPath(`/api/patient-reports/${r.id}/pdf`), '_blank')}>
                     <Download className="w-3 h-3 mr-1" /> Download
                   </Button>
                 </TableCell>
@@ -263,7 +264,7 @@ function BillsTab({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/portal/bills', { headers: { Authorization: `Bearer ${token}` } })
+    fetch(apiPath('/api/portal/bills'), { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => { setBills(d.bills || []); setLoading(false) })
       .catch(() => setLoading(false))
@@ -315,7 +316,7 @@ function AppointmentsTab({ token, patientId, patientName, patientPhone }: { toke
   const [showBook, setShowBook] = useState(false)
 
   const load = useCallback(() => {
-    fetch('/api/portal/appointments', { headers: { Authorization: `Bearer ${token}` } })
+    fetch(apiPath('/api/portal/appointments'), { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => { setAppointments(d.appointments || []); setLoading(false) })
       .catch(() => setLoading(false))
@@ -325,8 +326,8 @@ function AppointmentsTab({ token, patientId, patientName, patientPhone }: { toke
     load()
     // Load packages + tests for booking
     Promise.all([
-      fetch('/api/public/booking/packages').then((r) => r.json()),
-      fetch('/api/public/booking/tests').then((r) => r.json()),
+      fetch(apiPath('/api/public/booking/packages')).then((r) => r.json()),
+      fetch(apiPath('/api/public/booking/tests')).then((r) => r.json()),
     ]).then(([p, t]) => { setPackages(p.packages || []); setTests(t.tests || []) }).catch(() => {})
   }, [load])
 
@@ -387,7 +388,7 @@ function BookAppointment({ packages, tests, token, onDone }: { packages: any[]; 
     if (!packageId && testIds.length === 0) { toast.error('Select package or tests'); return }
     setLoading(true)
     try {
-      const res = await fetch('/api/portal/appointments', {
+      const res = await fetch(apiPath('/api/portal/appointments'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ packageId: packageId || undefined, testIds: packageId ? undefined : testIds, appointmentDate, timeSlot }),

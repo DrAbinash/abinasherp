@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get('category') || ''
   const status = searchParams.get('status') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: any = {}
   if (category) where.category = category
   if (status) where.status = status
 

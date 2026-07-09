@@ -87,9 +87,9 @@ export async function hashPin(pin: string): Promise<string> {
 }
 
 export async function verifyPin(pin: string, hash: string): Promise<boolean> {
-  // Auto-upgrade legacy plaintext
+  // Reject any non-bcrypt (e.g. legacy plaintext) hash — never compare plaintext
   if (!hash.startsWith('$2')) {
-    return pin === hash
+    return false
   }
   return bcrypt.compare(pin, hash)
 }

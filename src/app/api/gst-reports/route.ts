@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from') || ''
   const to = searchParams.get('to') || ''
 
-  const dateWhere: Record<string, unknown> = {}
+  const dateWhere: any = {}
   if (from || to) {
     dateWhere.date = {}
     if (from) dateWhere.date.gte = from

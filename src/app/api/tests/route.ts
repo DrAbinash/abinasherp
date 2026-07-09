@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') || ''
   const categoryId = searchParams.get('categoryId') || ''
 
-  const where: Record<string, unknown> = {}
-  if (q) where.OR = [{ name: { contains: q } }, { code: { contains: q } }]
+  const where: any = {}
+  if (q) where.OR = [{ name: { contains: q, mode: 'insensitive' as const } }, { code: { contains: q, mode: 'insensitive' as const } }]
   if (categoryId) where.categoryId = categoryId
 
   const tests = await db.test.findMany({

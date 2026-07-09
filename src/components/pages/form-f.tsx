@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { apiPath } from '@/lib/base-path'
 import { useApi } from '@/lib/auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -111,7 +112,7 @@ function ScanFormFDialog({ onClose, onDone }: { onClose: () => void; onDone: () 
       const fd = new FormData()
       fd.append('file', file)
       const token = localStorage.getItem('care_erp_token') || ''
-      const res = await fetch('/api/form-f/scan', {
+      const res = await fetch(apiPath('/api/form-f/scan'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

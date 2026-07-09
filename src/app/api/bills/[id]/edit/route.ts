@@ -30,7 +30,7 @@ export async function PUT(
   }
 
   const auditEntries: Array<{ changeType: string; oldValue: string; newValue: string }> = []
-  const update: Record<string, unknown> = {}
+  const update: any = {}
 
   // Discount change
   if (discount !== undefined) {

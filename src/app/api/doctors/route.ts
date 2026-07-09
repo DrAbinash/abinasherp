@@ -12,9 +12,9 @@ export async function GET(req: NextRequest) {
   const where = q
     ? {
         OR: [
-          { name: { contains: q } },
-          { phone: { contains: q } },
-          { specialization: { contains: q } },
+          { name: { contains: q, mode: 'insensitive' as const } },
+          { phone: { contains: q, mode: 'insensitive' as const } },
+          { specialization: { contains: q, mode: 'insensitive' as const } },
         ],
       }
     : {}
