@@ -139,19 +139,40 @@ test('error boundaries exist', () => {
 // ---------------------------------------------------------------------------
 // Docker / Synology deployment
 // ---------------------------------------------------------------------------
-test('Dockerfile runs migrations at startup and ships postgres client tools', () => {
-  const df = read('Dockerfile')
-  assert.match(df, /postgresql-client/)
-  assert.match(read('docker-entrypoint.sh'), /prisma migrate deploy/)
-  assert.match(df, /NEXT_PUBLIC_BASE_PATH/)
+test('migrations run in a dedicated one-shot service, verified, and gate the app', () => {
+  const c = read('docker-compose.yml')
+  assert.match(c, /prisma migrate deploy/)
+  assert.match(c, /prisma migrate status/) // schema verification
+  assert.match(c, /service_completed_successfully/)
+  assert.match(read('Dockerfile'), /postgresql-client/)
 })
 
-test('compose defines a postgres service with healthcheck-gated app startup and named volumes', () => {
+test('compose defines a postgres service with healthcheck-gated app startup and a durable volume', () => {
   const c = read('docker-compose.yml')
   assert.match(c, /postgres:16/)
   assert.match(c, /condition:\s*service_healthy/)
-  assert.match(c, /care-erp-pgdata/)
+  assert.match(c, /care_erp_pgdata/)
+  assert.match(c, /external:\s*true/) // survives `compose down -v`
   assert.match(c, /pg_isready/)
+})
+
+test('Docker healthcheck is a liveness probe (no DB) to avoid crash-loops', () => {
+  // The route used by the healthcheck must not query the database.
+  assert.doesNotMatch(read('src/app/api/health/route.ts'), /\$queryRaw|@\/lib\/db/)
+  // DB readiness lives in a separate endpoint.
+  assert.ok(existsSync(path.join(ROOT, 'src/app/api/health/db/route.ts')))
+})
+
+test('secret env files are excluded from the Docker image', () => {
+  const di = read('.dockerignore')
+  assert.match(di, /^\.env$/m)
+  assert.match(di, /^env$/m)
+})
+
+test('compose fails fast when required secrets are missing', () => {
+  const c = read('docker-compose.yml')
+  assert.match(c, /DB_PASSWORD:\?/)
+  assert.match(c, /BOOTSTRAP_ADMIN_PIN:\?/)
 })
 
 test('list endpoints clamp the limit param', () => {

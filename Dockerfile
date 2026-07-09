@@ -66,8 +66,10 @@ RUN mkdir -p /app/uploads/expense-bills /app/uploads/bank-statements
 
 EXPOSE 3000
 
-# Healthcheck hits the base-path-aware health route
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+# Liveness healthcheck — base-path-aware, does NOT touch the DB (see the route).
+# start-period is deliberately conservative to cover in-process startup tasks
+# (bootstrap admin seed) before the first check fires.
+HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=5 \
   CMD wget -qO- "http://localhost:3000${NEXT_PUBLIC_BASE_PATH}/api/health" || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
