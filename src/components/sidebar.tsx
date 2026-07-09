@@ -9,7 +9,8 @@ import {
   FileText, Banknote, BookOpen, ShieldCheck, ScrollText, Menu, X,
   ScanLine, Building2, FileBarChart, Search, FileCheck2,
   FlaskConical, Calendar, Package, MessageSquare, Network, Mail, Globe,
-  TestTube2, Home, Briefcase,
+  TestTube2, Home, Briefcase, Wrench, Gift, KeyRound, Beaker, Database,
+  BarChart3, UserSearch, TrendingUp, ClipboardCheck, Bot, Languages,
 } from 'lucide-react'
 
 // Reusable icon aliases
@@ -28,6 +29,9 @@ export type PageKey =
   | 'email-settings' | 'online-bookings'
   | 'whatsapp-settings' | 'daily-collection' | 'tds-reports'
   | 'samples' | 'home-collection' | 'corporates'
+  | 'equipment' | 'loyalty' | 'approvals' | 'api-keys' | 'nabl' | 'backup'
+  | 'analytics' | 'patient-360' | 'referral-analytics' | 'compliance'
+  | 'whatsapp-chatbot' | 'translations'
 
 interface NavItem {
   key: PageKey
@@ -59,6 +63,9 @@ const NAV: NavItem[] = [
   { key: 'tds-reports', label: 'TDS Reports', icon: TdsReports, group: 'Finance', superAdminOnly: true },
   { key: 'daily-collection', label: 'Daily Collection', icon: DailyCollection, group: 'Finance', superAdminOnly: true },
   { key: 'corporates', label: 'Corporate / TPA', icon: Briefcase, group: 'Finance', superAdminOnly: true },
+  { key: 'loyalty', label: 'Loyalty Program', icon: Gift, group: 'Finance' },
+  { key: 'analytics', label: 'Analytics', icon: BarChart3, group: 'Finance', superAdminOnly: true },
+  { key: 'referral-analytics', label: 'Referral Analytics', icon: TrendingUp, group: 'Finance', superAdminOnly: true },
   { key: 'reports', label: 'Lab Reports', icon: FileText, group: 'Finance' },
 
   { key: 'referrals', label: 'Referral Doctors', icon: Stethoscope, group: 'People', permission: '/doctors' },
@@ -66,12 +73,20 @@ const NAV: NavItem[] = [
   { key: 'staff', label: 'Staff', icon: Users, group: 'People', permission: '/staff' },
   { key: 'users', label: 'Users & Roles', icon: UserCog, group: 'People', superAdminOnly: true },
   { key: 'inventory', label: 'Inventory', icon: FlaskConical, group: 'People' },
+  { key: 'equipment', label: 'Equipment', icon: Wrench, group: 'People' },
+  { key: 'patient-360', label: 'Patient 360°', icon: UserSearch, group: 'People' },
   { key: 'notifications', label: 'Notifications', icon: MessageSquare, group: 'People', superAdminOnly: true },
 
   { key: 'clinic', label: 'Clinic Settings', icon: Settings, group: 'Admin' },
   { key: 'email-settings', label: 'Email & SMTP', icon: Mail, group: 'Admin', superAdminOnly: true },
   { key: 'whatsapp-settings', label: 'WhatsApp', icon: MessageSquare, group: 'Admin', superAdminOnly: true },
   { key: 'online-bookings', label: 'Online Bookings', icon: Globe, group: 'Admin', superAdminOnly: true },
+  { key: 'approvals', label: 'Discount Approvals', icon: ShieldCheck, group: 'Admin', superAdminOnly: true },
+  { key: 'api-keys', label: 'API Keys', icon: KeyRound, group: 'Admin', superAdminOnly: true },
+  { key: 'backup', label: 'Backup & Restore', icon: Database, group: 'Admin', superAdminOnly: true },
+  { key: 'compliance', label: 'NABL / PCPNDT', icon: ClipboardCheck, group: 'Admin', superAdminOnly: true },
+  { key: 'whatsapp-chatbot', label: 'WhatsApp Chatbot', icon: Bot, group: 'Admin', superAdminOnly: true },
+  { key: 'translations', label: 'Translations', icon: Languages, group: 'Admin', superAdminOnly: true },
   { key: 'branches', label: 'Branches', icon: Network, group: 'Admin', superAdminOnly: true },
   { key: 'role-permissions', label: 'Role Permissions', icon: ShieldCheck, group: 'Admin', superAdminOnly: true },
   { key: 'audit-logs', label: 'Audit Logs', icon: ScrollText, group: 'Admin', superAdminOnly: true },

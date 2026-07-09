@@ -23,6 +23,16 @@ import { PackagesPage } from '@/components/pages/packages'
 import { AppointmentsPage, NotificationsPage, BranchesPage, WhatsAppSettingsPage } from '@/components/pages/ops-pages'
 import { DailyCollectionPage, TdsReportsPage } from '@/components/pages/finance-reports'
 import { SamplesPage, HomeCollectionPage, CorporatePage } from '@/components/pages/advanced-pages'
+import { EquipmentPage } from '@/components/pages/equipment'
+import { LoyaltyPage } from '@/components/pages/loyalty'
+import { DiscountApprovalsPage } from '@/components/pages/approvals'
+import { ApiKeysPage } from '@/components/pages/api-keys'
+import { NablPage } from '@/components/pages/nabl'
+import { BackupPage } from '@/components/pages/backup'
+import { AnalyticsPage } from '@/components/pages/analytics'
+import { Patient360Page } from '@/components/pages/patient-360'
+import { ReferralAnalyticsPage } from '@/components/pages/referral-analytics'
+import { CompliancePage } from '@/components/pages/compliance'
 import { Button } from '@/components/ui/button'
 import { Database, Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/auth-context'
@@ -142,6 +152,18 @@ function PageRouter({ page }: { page: PageKey }) {
     case 'samples': return <SamplesPage />
     case 'home-collection': return <HomeCollectionPage />
     case 'corporates': return <CorporatePage />
+    case 'equipment': return <EquipmentPage />
+    case 'loyalty': return <LoyaltyPage />
+    case 'approvals': return <DiscountApprovalsPage />
+    case 'api-keys': return <ApiKeysPage />
+    case 'nabl': return <NablPage />
+    case 'backup': return <BackupPage />
+    case 'analytics': return <AnalyticsPage />
+    case 'patient-360': return <Patient360Page />
+    case 'referral-analytics': return <ReferralAnalyticsPage />
+    case 'compliance': return <CompliancePage />
+    case 'whatsapp-chatbot': return <WhatsAppSettingsPage />
+    case 'translations': return <ClinicPage />
     default: return <DashboardPage />
   }
 }

@@ -1,0 +1,21 @@
+{
+  "name": "Care ERP — Diagnostic Centre Management",
+  "short_name": "Care ERP",
+  "description": "Billing, Accounting, Banking, Commission, Staff, Reports, Inventory, Patient Portal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10b981",
+  "theme_color": "#10b981",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["medical", "business", "productivity"],
+  "lang": "en",
+  "dir": "ltr"
+}

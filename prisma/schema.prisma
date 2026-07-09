@@ -1602,3 +1602,217 @@ model CorporateInvoiceCounter {
   yearMonth       String   @unique
   counter         Int      @default(0)
 }
+
+// ============================================================
+// EQUIPMENT MAINTENANCE (#10)
+// ============================================================
+model Equipment {
+  id              String   @id @default(cuid())
+  equipmentId     String   @unique // EQ-####
+  name            String
+  model           String?
+  manufacturer    String?
+  serialNumber    String?
+  category        String   @default("general") // analyzer | usg | xray | mri | ct | general
+  location        String?
+  purchaseDate    String?
+  purchaseCost    Float    @default(0)
+  amcVendor       String?
+  amcStartDate    String?
+  amcEndDate      String?
+  amcContractNo   String?
+  lastServiceDate String?
+  nextServiceDate String?
+  calibrationDate String?
+  nextCalibrationDate String?
+  status          String   @default("operational") // operational | under_maintenance | breakdown | retired
+  notes           String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  maintenanceLogs EquipmentMaintenance[]
+  @@index([name])
+  @@index([status])
+}
+
+model EquipmentMaintenance {
+  id              String   @id @default(cuid())
+  equipmentId     String
+  type            String   // scheduled | breakdown | calibration | amc_visit
+  serviceDate     String   // YYYY-MM-DD
+  performedBy     String?
+  vendorName      String?
+  description     String
+  cost            Float    @default(0)
+  partsReplaced   String?
+  downtimeHours   Int      @default(0)
+  nextServiceDate String?
+  status          String   @default("completed") // scheduled | in_progress | completed | deferred
+  createdAt       DateTime @default(now())
+
+  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  @@index([equipmentId])
+  @@index([serviceDate])
+}
+
+// ============================================================
+// LOYALTY / REWARDS PROGRAM (#11)
+// ============================================================
+model LoyaltyPoint {
+  id              String   @id @default(cuid())
+  patientId       String
+  patientName     String
+  patientPhone    String?
+  points          Int      @default(0)
+  totalEarned     Int      @default(0)
+  totalRedeemed   Int      @default(0)
+  tier            String   @default("bronze") // bronze | silver | gold | platinum
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([patientId])
+  @@index([patientId])
+  @@index([tier])
+}
+
+model LoyaltyTransaction {
+  id              String   @id @default(cuid())
+  patientId       String
+  type            String   // earn | redeem | adjust | expire
+  points          Int      // positive for earn, negative for redeem
+  reason          String?
+  billId          String?
+  billNumber      String?
+  redemptionValue Float    @default(0) // ₹ value when redeeming
+  performedById   String?
+  performedByName String?
+  createdAt       DateTime @default(now())
+
+  @@index([patientId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// DISCOUNT APPROVAL WORKFLOW (#16)
+// ============================================================
+model DiscountApproval {
+  id              String   @id @default(cuid())
+  billId          String?
+  billNumber      String?
+  patientName     String?
+  requestedDiscount Float
+  requestedDiscountPercent Float
+  reason          String
+  status          String   @default("pending") // pending | approved | rejected | auto_approved
+  requestedById   String
+  requestedByName String
+  requestedAt     DateTime @default(now())
+  reviewedById    String?
+  reviewedByName  String?
+  reviewedAt      DateTime?
+  reviewNotes     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([billId])
+}
+
+// ============================================================
+// EXTERNAL API KEYS (#14)
+// ============================================================
+model ApiKey {
+  id              String   @id @default(cuid())
+  keyId           String   @unique // key-xxxx
+  name            String
+  key             String   @unique // the actual API key (hashed)
+  permissions     String   @default("[]") // JSON array: ["read:patients","read:reports","create:orders"]
+  rateLimitPerMin Int      @default(60)
+  isActive        Boolean  @default(true)
+  lastUsedAt      DateTime?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([keyId])
+}
+
+model ApiAccessLog {
+  id              String   @id @default(cuid())
+  apiKeyId        String?
+  keyId           String?
+  endpoint        String
+  method          String
+  statusCode      Int
+  ipAddress       String?
+  userAgent       String?
+  durationMs      Int?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  @@index([apiKeyId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// NABL COMPLIANCE (#9)
+// ============================================================
+model NablChecklist {
+  id              String   @id @default(cuid())
+  checklistId     String   @unique // NABL-YYYY-####
+  title           String
+  category        String   // internal_audit | eqa | corrective_action | management_review
+  auditDate       String   // YYYY-MM-DD
+  auditorName     String?
+  status          String   @default("open") // open | in_progress | completed | closed
+  findings        String?  // JSON array of {area, finding, severity}
+  totalFindings   Int      @default(0)
+  closedFindings  Int      @default(0)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  correctiveActions NablCorrectiveAction[]
+  @@index([status])
+  @@index([category])
+}
+
+model NablCorrectiveAction {
+  id              String   @id @default(cuid())
+  checklistId     String
+  finding         String
+  severity        String   @default("minor") // minor | major | critical
+  rootCause       String?
+  correctiveAction String?
+  preventiveAction String?
+  assignedTo      String?
+  dueDate         String?
+  status          String   @default("open") // open | in_progress | implemented | verified | closed
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  checklist       NablChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  @@index([checklistId])
+  @@index([status])
+}
+
+// ============================================================
+// MULTI-LANGUAGE TRANSLATIONS (#12)
+// ============================================================
+model Translation {
+  id              String   @id @default(cuid())
+  key             String   @unique // e.g. "dashboard.title", "billing.create_bill"
+  enValue         String   // English
+  hiValue         String?  // Hindi
+  bnValue         String?  // Bengali
+  taValue         String?  // Tamil
+  teValue         String?  // Telugu
+  mrValue         String?  // Marathi
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([key])
+}
