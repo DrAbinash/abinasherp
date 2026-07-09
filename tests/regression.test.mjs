@@ -147,6 +147,13 @@ test('migrations run in a dedicated one-shot service, verified, and gate the app
   assert.match(read('Dockerfile'), /postgresql-client/)
 })
 
+test('pre-migrate DB identity guard exists and runs before migrate', () => {
+  assert.ok(existsSync(path.join(ROOT, 'scripts/db-identity-guard.sh')))
+  const c = read('docker-compose.yml')
+  assert.match(c, /db-identity-guard\.sh && npx prisma migrate deploy/)
+  assert.match(read('Dockerfile'), /db-identity-guard\.sh/)
+})
+
 test('compose defines a postgres service with healthcheck-gated app startup and a durable volume', () => {
   const c = read('docker-compose.yml')
   assert.match(c, /postgres:16/)

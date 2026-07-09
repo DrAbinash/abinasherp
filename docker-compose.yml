@@ -48,9 +48,12 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${DB_USER:-careerp}:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/${DB_NAME:-careerp}?schema=public
-    # migrate deploy is idempotent (skips already-applied migrations); status
-    # exits non-zero if the DB is not fully up to date, which blocks the app.
-    command: ["sh", "-c", "npx prisma migrate deploy && npx prisma migrate status"]
+      # Identity stamp — the guard refuses to migrate against a DB carrying a
+      # different app_name/environment (protects against wrong-DATABASE_URL).
+      APP_NAME: ${APP_NAME:-care-erp}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-production}
+    # 1) identity guard  2) idempotent migrate deploy  3) status = schema verify
+    command: ["sh", "-c", "/app/scripts/db-identity-guard.sh && npx prisma migrate deploy && npx prisma migrate status"]
 
   care-erp:
     build:

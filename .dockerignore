@@ -6,6 +6,7 @@ ref-repo
 tool-results
 download
 scripts
+!scripts/db-identity-guard.sh
 .zscripts
 db
 upload

@@ -57,9 +57,10 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
-# Entrypoint (migrate then start)
+# Entrypoint + pre-migrate DB identity guard (run by the migrate service)
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
+COPY scripts/db-identity-guard.sh ./scripts/db-identity-guard.sh
+RUN chmod +x ./docker-entrypoint.sh ./scripts/db-identity-guard.sh
 
 # Uploads directory (mounted as a named volume in compose)
 RUN mkdir -p /app/uploads/expense-bills /app/uploads/bank-statements
